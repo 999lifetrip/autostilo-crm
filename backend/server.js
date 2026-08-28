@@ -13,13 +13,17 @@ const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || '';
 
 // ─── Postgres ────────────────────────────────────────────────────────────────
+let dbConnected = false;
+let dbError = null;
+
 const db = new Pool({
-    host: process.env.DB_HOST || 'localhost',
+    host: process.env.DB_HOST || 'postgresql',
     port: parseInt(process.env.DB_PORT || '5432'),
     database: process.env.DB_NAME || 'n8n',
     user: process.env.DB_USER || 'n8n',
     password: process.env.DB_PASSWORD || '',
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: 10000,
 });
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -30,70 +34,82 @@ app.use(express.json());
 // Serve frontend estático
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
-// ─── Inicializar tabelas do CRM ──────────────────────────────────────────────
+// ─── Inicializar tabelas do CRM com retry ────────────────────────────────────
 async function initTables() {
-    await db.query(`
-        CREATE TABLE IF NOT EXISTS crm_lojas (
-            id SERIAL PRIMARY KEY,
-            nome VARCHAR(100) NOT NULL,
-            slug VARCHAR(50) UNIQUE NOT NULL,
-            criado_em TIMESTAMP DEFAULT NOW()
-        );
+    try {
+        console.log(`🔌 Tentando conectar ao Postgres em ${process.env.DB_HOST || 'postgresql'}:${process.env.DB_PORT || 5432}...`);
+        
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS crm_lojas (
+                id SERIAL PRIMARY KEY,
+                nome VARCHAR(100) NOT NULL,
+                slug VARCHAR(50) UNIQUE NOT NULL,
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
 
-        CREATE TABLE IF NOT EXISTS crm_usuarios (
-            id SERIAL PRIMARY KEY,
-            loja_id INTEGER REFERENCES crm_lojas(id),
-            nome VARCHAR(100) NOT NULL,
-            email VARCHAR(150) UNIQUE NOT NULL,
-            senha_hash VARCHAR(200) NOT NULL,
-            role VARCHAR(20) DEFAULT 'vendedor',
-            ativo BOOLEAN DEFAULT true,
-            criado_em TIMESTAMP DEFAULT NOW()
-        );
+            CREATE TABLE IF NOT EXISTS crm_usuarios (
+                id SERIAL PRIMARY KEY,
+                loja_id INTEGER REFERENCES crm_lojas(id),
+                nome VARCHAR(100) NOT NULL,
+                email VARCHAR(150) UNIQUE NOT NULL,
+                senha_hash VARCHAR(200) NOT NULL,
+                role VARCHAR(20) DEFAULT 'vendedor',
+                ativo BOOLEAN DEFAULT true,
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
 
-        CREATE TABLE IF NOT EXISTS crm_leads (
-            id SERIAL PRIMARY KEY,
-            loja_id INTEGER REFERENCES crm_lojas(id),
-            telefone VARCHAR(30) UNIQUE NOT NULL,
-            nome VARCHAR(150),
-            ia_ativa BOOLEAN DEFAULT true,
-            etiqueta VARCHAR(50) DEFAULT 'novo',
-            vendedor_id INTEGER REFERENCES crm_usuarios(id),
-            anotacoes TEXT,
-            ultima_mensagem TEXT,
-            ultima_interacao TIMESTAMP DEFAULT NOW(),
-            total_mensagens INTEGER DEFAULT 0,
-            escalado_em TIMESTAMP,
-            criado_em TIMESTAMP DEFAULT NOW()
-        );
+            CREATE TABLE IF NOT EXISTS crm_leads (
+                id SERIAL PRIMARY KEY,
+                loja_id INTEGER REFERENCES crm_lojas(id),
+                telefone VARCHAR(30) UNIQUE NOT NULL,
+                nome VARCHAR(150),
+                ia_ativa BOOLEAN DEFAULT true,
+                etiqueta VARCHAR(50) DEFAULT 'novo',
+                vendedor_id INTEGER REFERENCES crm_usuarios(id),
+                anotacoes TEXT,
+                ultima_mensagem TEXT,
+                ultima_interacao TIMESTAMP DEFAULT NOW(),
+                total_mensagens INTEGER DEFAULT 0,
+                escalado_em TIMESTAMP,
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
 
-        CREATE TABLE IF NOT EXISTS crm_historico_leads (
-            id SERIAL PRIMARY KEY,
-            lead_id INTEGER REFERENCES crm_leads(id),
-            campo VARCHAR(50),
-            valor_anterior TEXT,
-            valor_novo TEXT,
-            usuario_id INTEGER REFERENCES crm_usuarios(id),
-            criado_em TIMESTAMP DEFAULT NOW()
-        );
-    `);
-    console.log('✅ Tabelas CRM verificadas/criadas');
+            CREATE TABLE IF NOT EXISTS crm_historico_leads (
+                id SERIAL PRIMARY KEY,
+                lead_id INTEGER REFERENCES crm_leads(id),
+                campo VARCHAR(50),
+                valor_anterior TEXT,
+                valor_novo TEXT,
+                usuario_id INTEGER REFERENCES crm_usuarios(id),
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        console.log('✅ Tabelas CRM verificadas/criadas no Postgres');
 
-    // Cria loja padrão se não existir
-    const lojas = await db.query('SELECT id FROM crm_lojas LIMIT 1');
-    if (lojas.rows.length === 0) {
-        const loja = await db.query(
-            "INSERT INTO crm_lojas (nome, slug) VALUES ('AutoStiloCar', 'autostilocar') RETURNING id"
-        );
-        const lojaId = loja.rows[0].id;
+        // Cria loja padrão se não existir
+        const lojas = await db.query('SELECT id FROM crm_lojas LIMIT 1');
+        if (lojas.rows.length === 0) {
+            const loja = await db.query(
+                "INSERT INTO crm_lojas (nome, slug) VALUES ('AutoStiloCar', 'autostilocar') RETURNING id"
+            );
+            const lojaId = loja.rows[0].id;
 
-        const hash = await bcrypt.hash('admin123', 10);
-        await db.query(
-            `INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role)
-             VALUES ($1, 'Administrador', 'admin@autostilocar.com.br', $2, 'admin')`,
-            [lojaId, hash]
-        );
-        console.log('✅ Loja e admin padrão criados (admin@autostilocar.com.br / admin123)');
+            const hash = await bcrypt.hash('admin123', 10);
+            await db.query(
+                `INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role)
+                 VALUES ($1, 'Administrador', 'admin@autostilocar.com.br', $2, 'admin')`,
+                [lojaId, hash]
+            );
+            console.log('✅ Loja e admin padrão criados (admin@autostilocar.com.br / admin123)');
+        }
+        dbConnected = true;
+        dbError = null;
+    } catch (e) {
+        dbConnected = false;
+        dbError = e.message;
+        console.error('⚠️ Aviso Postgres:', e.message);
+        console.log('🔄 Tentando reconectar ao Postgres em 10 segundos...');
+        setTimeout(initTables, 10000);
     }
 }
 
@@ -112,6 +128,9 @@ function authMiddleware(req, res, next) {
 // ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 app.post('/api/auth/login', async (req, res) => {
     try {
+        if (!dbConnected) {
+            return res.status(503).json({ error: `Banco de dados desconectado: ${dbError || 'Conectando...'}` });
+        }
         const { email, senha } = req.body;
         const result = await db.query(
             `SELECT u.*, l.nome as loja_nome, l.slug as loja_slug
@@ -152,13 +171,11 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
             db.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND DATE(ultima_interacao) = $2', [lojaId, hoje]),
         ]);
 
-        // Distribuição de etiquetas
         const etiquetas = await db.query(
             'SELECT etiqueta, COUNT(*) as total FROM crm_leads WHERE loja_id = $1 GROUP BY etiqueta ORDER BY total DESC',
             [lojaId]
         );
 
-        // Últimos 7 dias de atividade
         const atividade = await db.query(`
             SELECT DATE(ultima_interacao) as dia, COUNT(*) as total
             FROM crm_leads
@@ -247,7 +264,6 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
         );
         if (!lead.rows.length) return res.status(404).json({ error: 'Lead não encontrado' });
 
-        // Histórico do Postgres do n8n
         const historico = await db.query(
             `SELECT * FROM n8n_historico_mensagens WHERE session_id = $1 ORDER BY id DESC LIMIT 100`,
             [decodeURIComponent(telefone)]
@@ -261,11 +277,10 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
 
 app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
     try {
-        const { lojaId, id: userId } = req.user;
+        const { lojaId } = req.user;
         const { telefone } = req.params;
         const { ia_ativa, etiqueta, vendedor_id, anotacoes, nome } = req.body;
 
-        // Busca lead atual
         const current = await db.query(
             'SELECT * FROM crm_leads WHERE loja_id = $1 AND telefone = $2',
             [lojaId, decodeURIComponent(telefone)]
@@ -294,12 +309,11 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
             params
         );
 
-        // Se desligou IA, atualiza também na tabela do n8n
         if (ia_ativa === false || ia_ativa === 'false') {
             await db.query(
                 `UPDATE n8n_status_atendimento SET escalado = true WHERE telefone = $1`,
                 [decodeURIComponent(telefone)]
-            ).catch(() => {}); // ignora se tabela não existir
+            ).catch(() => {});
         }
 
         res.json({ lead: updated.rows[0] });
@@ -308,9 +322,8 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
     }
 });
 
-// Upsert lead (chamado pelo n8n quando chega mensagem nova)
+// Upsert lead (chamado pelo n8n)
 app.post('/api/leads/upsert', async (req, res) => {
-    // Endpoint interno — sem auth JWT, mas com secret header
     const secret = req.headers['x-crm-secret'];
     if (secret !== JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
 
@@ -374,7 +387,7 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
         const { texto } = req.body;
 
         const phone = decodeURIComponent(telefone).replace(/\D/g, '');
-        const response = await fetch(`${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`, {
+        const response = await fetch(`${EVOLUTION_URL}/message/sendText/${encodeURIComponent(EVOLUTION_INSTANCE)}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -394,20 +407,23 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
     }
 });
 
-// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+// ─── HEALTH & STATUS CHECK ────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => res.json({
+    status: 'ok',
+    db_connected: dbConnected,
+    db_error: dbError,
+    db_host: process.env.DB_HOST,
+    uptime: process.uptime(),
+    ts: new Date().toISOString()
+}));
 
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
-initTables().then(() => {
-    app.listen(PORT, () => {
-        console.log(`🚀 AutoStilo CRM rodando em http://localhost:${PORT}`);
-    });
-}).catch(e => {
-    console.error('❌ Erro ao inicializar:', e.message);
-    process.exit(1);
+// ─── Start Web Server immediately (stays alive) ───────────────────────────────
+app.listen(PORT, () => {
+    console.log(`🚀 AutoStilo CRM rodando na porta ${PORT}`);
+    initTables();
 });
