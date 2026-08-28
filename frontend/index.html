@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoStilo CRM — Painel de Atendimento</title>
-    <meta name="description" content="CRM de atendimento inteligente para concessionárias e lojas de veículos. Gerencie leads, controle a IA e acompanhe sua equipe em tempo real.">
+    <title>AutoStilo CAR — CRM & Gestão IA</title>
+    <meta name="description" content="Painel oficial de vendas e atendimento IA da AutoStilo CAR. Gestão de leads, controle da IA e equipe em tempo real.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -20,14 +20,18 @@
         </div>
         <div class="login-card">
             <div class="login-logo">
-                <div class="login-logo-icon">🚗</div>
-                <h1>AutoStilo CRM</h1>
-                <p>Painel de Atendimento Inteligente</p>
+                <div class="brand-title">
+                    AutoStilo <span class="car-tag">CAR</span>
+                </div>
+                <div>
+                    <span class="badge-pill-brand">+ DE 20 ANOS DE TRADIÇÃO</span>
+                </div>
+                <p>Painel de Vendas & Atendimento Inteligente</p>
             </div>
             <form id="loginForm" class="login-form">
                 <div class="form-group">
-                    <label for="loginEmail">E-mail</label>
-                    <input type="email" id="loginEmail" placeholder="seu@email.com.br" required autocomplete="email">
+                    <label for="loginEmail">E-mail de Acesso</label>
+                    <input type="email" id="loginEmail" placeholder="vendedor@autostilocar.com.br" required autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="loginSenha">Senha</label>
@@ -38,7 +42,7 @@
                 </div>
                 <div id="loginError" class="login-error hidden">E-mail ou senha incorretos</div>
                 <button type="submit" id="loginBtn" class="btn btn-primary btn-full">
-                    <span class="btn-text">Entrar</span>
+                    <span class="btn-text">Entrar no Painel</span>
                     <span class="btn-loader hidden">●●●</span>
                 </button>
             </form>
@@ -50,8 +54,10 @@
         <!-- SIDEBAR -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-logo">
-                <span class="sidebar-logo-icon">🚗</span>
-                <span class="sidebar-logo-text">AutoStilo CRM</span>
+                <div class="brand-title" style="font-size: 1.35rem;">
+                    AutoStilo <span class="car-tag" style="font-size: 0.7rem;">CAR</span>
+                </div>
+                <span class="sidebar-logo-sub">📍 Tatuquara, Curitiba/PR</span>
             </div>
 
             <nav class="sidebar-nav">
@@ -61,21 +67,21 @@
                 </button>
                 <button class="nav-item" data-page="leads" id="navLeads">
                     <span class="nav-icon">👥</span>
-                    <span class="nav-label">Leads</span>
+                    <span class="nav-label">Leads WhatsApp</span>
                     <span class="nav-badge" id="badgeLeads">0</span>
                 </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
-                    <span class="nav-icon">🧑‍💼</span>
-                    <span class="nav-label">Equipe</span>
+                    <span class="nav-icon">🏎️</span>
+                    <span class="nav-label">Vendedores</span>
                 </button>
             </nav>
 
             <div class="sidebar-footer">
                 <div class="sidebar-user" id="sidebarUser">
-                    <div class="sidebar-user-avatar" id="userAvatar">?</div>
+                    <div class="sidebar-user-avatar" id="userAvatar">A</div>
                     <div class="sidebar-user-info">
                         <span class="sidebar-user-name" id="userName">Carregando...</span>
-                        <span class="sidebar-user-role" id="userRole">vendedor</span>
+                        <span class="sidebar-user-role" id="userRole">VENDEDOR</span>
                     </div>
                 </div>
                 <button class="btn-logout" id="btnLogout" title="Sair">⏻</button>
@@ -87,9 +93,12 @@
             <!-- HEADER -->
             <header class="header">
                 <button class="btn-menu-toggle" id="btnMenuToggle" aria-label="Menu">☰</button>
-                <div class="header-title" id="headerTitle">Dashboard</div>
+                <div class="header-title" id="headerTitle">Dashboard Geral</div>
                 <div class="header-actions">
-                    <div class="status-dot" id="statusDot" title="Conectado"></div>
+                    <div class="status-pill">
+                        <div class="status-dot"></div>
+                        <span>IA ONLINE</span>
+                    </div>
                     <span class="header-time" id="headerTime"></span>
                 </div>
             </header>
@@ -100,13 +109,15 @@
                 <!-- ── DASHBOARD PAGE ── -->
                 <div class="page active" id="pageDashboard">
                     <div class="page-header">
-                        <h2>Visão Geral</h2>
-                        <span class="page-subtitle" id="dashDate"></span>
+                        <div>
+                            <h2>Visão Geral da Loja</h2>
+                            <span class="page-subtitle" id="dashDate"></span>
+                        </div>
                     </div>
 
                     <div class="stats-grid" id="statsGrid">
-                        <div class="stat-card stat-blue">
-                            <div class="stat-icon">👥</div>
+                        <div class="stat-card stat-green">
+                            <div class="stat-icon">🏎️</div>
                             <div class="stat-info">
                                 <div class="stat-value" id="statTotalLeads">—</div>
                                 <div class="stat-label">Total de Leads</div>
@@ -116,14 +127,14 @@
                             <div class="stat-icon">🤖</div>
                             <div class="stat-info">
                                 <div class="stat-value" id="statIaAtiva">—</div>
-                                <div class="stat-label">IA Ativa</div>
+                                <div class="stat-label">IA Atendendo</div>
                             </div>
                         </div>
                         <div class="stat-card stat-orange">
                             <div class="stat-icon">👤</div>
                             <div class="stat-info">
                                 <div class="stat-value" id="statIaOff">—</div>
-                                <div class="stat-label">Atendimento Humano</div>
+                                <div class="stat-label">Com Vendedor Humano</div>
                             </div>
                         </div>
                         <div class="stat-card stat-red">
@@ -138,7 +149,7 @@
                     <div class="dashboard-grid">
                         <div class="card">
                             <div class="card-header">
-                                <h3>Distribuição por Etiqueta</h3>
+                                <h3>🏷️ Leads por Etiqueta / Funil</h3>
                             </div>
                             <div class="card-body">
                                 <div id="etiquetasChart" class="etiquetas-chart"></div>
@@ -146,7 +157,7 @@
                         </div>
                         <div class="card">
                             <div class="card-header">
-                                <h3>Últimas 7 Atividades Diárias</h3>
+                                <h3>📈 Movimento dos Últimos 7 Dias</h3>
                             </div>
                             <div class="card-body">
                                 <div id="atividadeChart" class="atividade-chart"></div>
@@ -156,11 +167,11 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <h3>🔔 Leads Escalados Recentemente</h3>
+                            <h3>🔔 Clientes Pedindo Vendedor Humano (Urgente)</h3>
                         </div>
                         <div class="card-body">
                             <div id="escaladosList" class="escalados-list">
-                                <div class="empty-state">Sem escalados no momento</div>
+                                <div class="empty-state">Sem clientes aguardando atendimento humano</div>
                             </div>
                         </div>
                     </div>
@@ -169,11 +180,14 @@
                 <!-- ── LEADS PAGE ── -->
                 <div class="page" id="pageLeads">
                     <div class="page-header">
-                        <h2>Leads</h2>
+                        <div>
+                            <h2>Gestão de Leads</h2>
+                            <span class="page-subtitle">Acompanhe e assuma conversas do WhatsApp em tempo real</span>
+                        </div>
                         <div class="page-header-actions">
                             <div class="search-box">
                                 <span class="search-icon">🔍</span>
-                                <input type="text" id="searchInput" placeholder="Buscar por nome ou telefone...">
+                                <input type="text" id="searchInput" placeholder="Buscar por cliente ou telefone...">
                             </div>
                         </div>
                     </div>
@@ -184,19 +198,19 @@
                             <div class="filter-chips">
                                 <button class="filter-chip active" data-filter="ia_ativa" data-value="">Todos</button>
                                 <button class="filter-chip" data-filter="ia_ativa" data-value="true">🟢 IA Ativa</button>
-                                <button class="filter-chip" data-filter="ia_ativa" data-value="false">🔴 IA Off</button>
+                                <button class="filter-chip" data-filter="ia_ativa" data-value="false">🔴 Com Vendedor</button>
                             </div>
                         </div>
                         <div class="filter-group">
-                            <span class="filter-label">Etiqueta:</span>
+                            <span class="filter-label">Funil:</span>
                             <select id="filterEtiqueta" class="filter-select">
-                                <option value="todos">Todas</option>
-                                <option value="novo">🆕 Novo</option>
-                                <option value="quente">🔥 Quente</option>
-                                <option value="agendado">📅 Agendado</option>
-                                <option value="fechou">✅ Fechou</option>
+                                <option value="todos">Todas as Etiquetas</option>
+                                <option value="novo">🆕 Novo Lead</option>
+                                <option value="quente">🔥 Quente (Interesse)</option>
+                                <option value="agendado">📅 Test Drive Agendado</option>
+                                <option value="fechou">✅ Venda Fechada</option>
                                 <option value="perdeu">❌ Perdeu</option>
-                                <option value="aguardando">🕐 Aguardando</option>
+                                <option value="aguardando">🕐 Aguardando Documentos</option>
                             </select>
                         </div>
                     </div>
@@ -205,21 +219,18 @@
                         <table class="leads-table" id="leadsTable">
                             <thead>
                                 <tr>
-                                    <th>Lead</th>
+                                    <th>Cliente</th>
                                     <th>Última Mensagem</th>
-                                    <th>Etiqueta</th>
+                                    <th>Funil / Etiqueta</th>
                                     <th>Vendedor</th>
                                     <th>Status IA</th>
-                                    <th>Interação</th>
-                                    <th></th>
+                                    <th>Última Interação</th>
+                                    <th>Ação</th>
                                 </tr>
                             </thead>
                             <tbody id="leadsTableBody">
                                 <tr>
-                                    <td colspan="7" class="table-loading">
-                                        <div class="spinner"></div>
-                                        Carregando leads...
-                                    </td>
+                                    <td colspan="7" class="table-loading">Carregando leads...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -231,8 +242,11 @@
                 <!-- ── EQUIPE PAGE ── -->
                 <div class="page" id="pageEquipe">
                     <div class="page-header">
-                        <h2>Equipe</h2>
-                        <button class="btn btn-primary" id="btnNovoUsuario">+ Novo Membro</button>
+                        <div>
+                            <h2>Equipe de Vendas</h2>
+                            <span class="page-subtitle">Gerencie os consultores da AutoStiloCar</span>
+                        </div>
+                        <button class="btn btn-primary" id="btnNovoUsuario">+ Novo Consultor</button>
                     </div>
 
                     <div class="cards-grid" id="equipeGrid">
@@ -249,9 +263,9 @@
         <div class="modal modal-large">
             <div class="modal-header">
                 <div class="modal-lead-info">
-                    <div class="modal-avatar" id="modalAvatar">?</div>
+                    <div class="modal-avatar" id="modalAvatar">C</div>
                     <div>
-                        <h3 id="modalLeadNome">Lead</h3>
+                        <h3 id="modalLeadNome">Cliente</h3>
                         <span id="modalLeadTelefone" class="modal-sub"></span>
                     </div>
                 </div>
@@ -260,7 +274,7 @@
             <div class="modal-body modal-two-col">
                 <div class="modal-col modal-col-left">
                     <div class="modal-section">
-                        <h4>Status da IA</h4>
+                        <h4>Atendimento Automático IA</h4>
                         <div class="ia-toggle-wrapper">
                             <span id="iaStatusLabel" class="ia-status-label ia-on">🤖 IA Ativa</span>
                             <label class="toggle-switch">
@@ -270,31 +284,31 @@
                         </div>
                     </div>
                     <div class="modal-section">
-                        <h4>Etiqueta</h4>
+                        <h4>Etiqueta do Funil</h4>
                         <div class="etiqueta-grid" id="etiquetaGrid"></div>
                     </div>
                     <div class="modal-section">
-                        <h4>Vendedor Responsável</h4>
+                        <h4>Consultor Responsável</h4>
                         <select id="vendedorSelect" class="form-control"></select>
                     </div>
                     <div class="modal-section">
-                        <h4>Anotações</h4>
-                        <textarea id="anotacoesInput" class="form-control form-textarea" placeholder="Adicione observações sobre este lead..."></textarea>
+                        <h4>Anotações do Veículo / Negociação</h4>
+                        <textarea id="anotacoesInput" class="form-control form-textarea" placeholder="Ex: Interessado no Corolla 2022, tem troca de Gol 2018..."></textarea>
                     </div>
-                    <button class="btn btn-primary btn-full" id="btnSalvarLead">💾 Salvar Alterações</button>
+                    <button class="btn btn-primary btn-full" id="btnSalvarLead">💾 Salvar Lead</button>
 
                     <div class="modal-section mt-md">
-                        <h4>Enviar Mensagem Manual</h4>
+                        <h4>Enviar Mensagem no WhatsApp</h4>
                         <div class="msg-input-wrapper">
-                            <textarea id="msgManualInput" class="form-control form-textarea-sm" placeholder="Digite a mensagem..."></textarea>
-                            <button class="btn btn-secondary" id="btnEnviarMsg">Enviar ↗</button>
+                            <textarea id="msgManualInput" class="form-control form-textarea-sm" placeholder="Digite a mensagem para o cliente..."></textarea>
+                            <button class="btn btn-secondary" id="btnEnviarMsg">Enviar WhatsApp ↗</button>
                         </div>
                     </div>
                 </div>
                 <div class="modal-col modal-col-right">
-                    <h4>Histórico da Conversa</h4>
+                    <h4>Histórico da Conversa WhatsApp</h4>
                     <div class="chat-view" id="chatView">
-                        <div class="chat-loading">Carregando...</div>
+                        <div class="chat-loading">Carregando conversa...</div>
                     </div>
                 </div>
             </div>
@@ -305,18 +319,18 @@
     <div class="modal-overlay hidden" id="modalUsuario">
         <div class="modal">
             <div class="modal-header">
-                <h3>Novo Membro da Equipe</h3>
+                <h3>Novo Consultor de Vendas</h3>
                 <button class="modal-close" id="modalUsuarioClose">✕</button>
             </div>
             <div class="modal-body">
                 <form id="formUsuario">
                     <div class="form-group">
                         <label>Nome Completo</label>
-                        <input type="text" id="usuarioNome" class="form-control" placeholder="João Silva" required>
+                        <input type="text" id="usuarioNome" class="form-control" placeholder="Iago Consultor" required>
                     </div>
                     <div class="form-group">
-                        <label>E-mail</label>
-                        <input type="email" id="usuarioEmail" class="form-control" placeholder="joao@loja.com.br" required>
+                        <label>E-mail de Login</label>
+                        <input type="email" id="usuarioEmail" class="form-control" placeholder="iago@autostilocar.com.br" required>
                     </div>
                     <div class="form-group">
                         <label>Senha</label>
@@ -325,20 +339,20 @@
                     <div class="form-group">
                         <label>Função</label>
                         <select id="usuarioRole" class="form-control">
-                            <option value="vendedor">Vendedor</option>
-                            <option value="admin">Administrador</option>
+                            <option value="vendedor">Consultor de Vendas</option>
+                            <option value="admin">Gerente / Administrador</option>
                         </select>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-ghost" id="btnCancelarUsuario">Cancelar</button>
-                        <button type="submit" class="btn btn-primary">Criar Membro</button>
+                        <button type="submit" class="btn btn-primary">Cadastrar</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- TOAST NOTIFICATION -->
+    <!-- TOAST -->
     <div id="toast" class="toast hidden"></div>
 
     <script src="js/app.js"></script>
