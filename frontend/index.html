@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoStilo CRM — Painel de Atendimento</title>
+    <meta name="description" content="CRM de atendimento inteligente para concessionárias e lojas de veículos. Gerencie leads, controle a IA e acompanhe sua equipe em tempo real.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-bg-orbs">
+            <div class="orb orb-1"></div>
+            <div class="orb orb-2"></div>
+            <div class="orb orb-3"></div>
+        </div>
+        <div class="login-card">
+            <div class="login-logo">
+                <div class="login-logo-icon">🚗</div>
+                <h1>AutoStilo CRM</h1>
+                <p>Painel de Atendimento Inteligente</p>
+            </div>
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="loginEmail">E-mail</label>
+                    <input type="email" id="loginEmail" placeholder="seu@email.com.br" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="loginSenha">Senha</label>
+                    <div class="input-with-icon">
+                        <input type="password" id="loginSenha" placeholder="••••••••" required autocomplete="current-password">
+                        <button type="button" id="toggleSenha" class="input-icon-btn" aria-label="Mostrar senha">👁</button>
+                    </div>
+                </div>
+                <div id="loginError" class="login-error hidden">E-mail ou senha incorretos</div>
+                <button type="submit" id="loginBtn" class="btn btn-primary btn-full">
+                    <span class="btn-text">Entrar</span>
+                    <span class="btn-loader hidden">●●●</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app" class="app hidden">
+        <!-- SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <span class="sidebar-logo-icon">🚗</span>
+                <span class="sidebar-logo-text">AutoStilo CRM</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-page="dashboard" id="navDashboard">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Dashboard</span>
+                </button>
+                <button class="nav-item" data-page="leads" id="navLeads">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-label">Leads</span>
+                    <span class="nav-badge" id="badgeLeads">0</span>
+                </button>
+                <button class="nav-item" data-page="equipe" id="navEquipe">
+                    <span class="nav-icon">🧑‍💼</span>
+                    <span class="nav-label">Equipe</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user" id="sidebarUser">
+                    <div class="sidebar-user-avatar" id="userAvatar">?</div>
+                    <div class="sidebar-user-info">
+                        <span class="sidebar-user-name" id="userName">Carregando...</span>
+                        <span class="sidebar-user-role" id="userRole">vendedor</span>
+                    </div>
+                </div>
+                <button class="btn-logout" id="btnLogout" title="Sair">⏻</button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main">
+            <!-- HEADER -->
+            <header class="header">
+                <button class="btn-menu-toggle" id="btnMenuToggle" aria-label="Menu">☰</button>
+                <div class="header-title" id="headerTitle">Dashboard</div>
+                <div class="header-actions">
+                    <div class="status-dot" id="statusDot" title="Conectado"></div>
+                    <span class="header-time" id="headerTime"></span>
+                </div>
+            </header>
+
+            <!-- PAGES -->
+            <div class="pages">
+
+                <!-- ── DASHBOARD PAGE ── -->
+                <div class="page active" id="pageDashboard">
+                    <div class="page-header">
+                        <h2>Visão Geral</h2>
+                        <span class="page-subtitle" id="dashDate"></span>
+                    </div>
+
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-card stat-blue">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statTotalLeads">—</div>
+                                <div class="stat-label">Total de Leads</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-green">
+                            <div class="stat-icon">🤖</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statIaAtiva">—</div>
+                                <div class="stat-label">IA Ativa</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-orange">
+                            <div class="stat-icon">👤</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statIaOff">—</div>
+                                <div class="stat-label">Atendimento Humano</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-red">
+                            <div class="stat-icon">🔔</div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="statEscaladosHoje">—</div>
+                                <div class="stat-label">Escalados Hoje</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Distribuição por Etiqueta</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="etiquetasChart" class="etiquetas-chart"></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Últimas 7 Atividades Diárias</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="atividadeChart" class="atividade-chart"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🔔 Leads Escalados Recentemente</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="escaladosList" class="escalados-list">
+                                <div class="empty-state">Sem escalados no momento</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── LEADS PAGE ── -->
+                <div class="page" id="pageLeads">
+                    <div class="page-header">
+                        <h2>Leads</h2>
+                        <div class="page-header-actions">
+                            <div class="search-box">
+                                <span class="search-icon">🔍</span>
+                                <input type="text" id="searchInput" placeholder="Buscar por nome ou telefone...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="filters-bar">
+                        <div class="filter-group">
+                            <span class="filter-label">Status IA:</span>
+                            <div class="filter-chips">
+                                <button class="filter-chip active" data-filter="ia_ativa" data-value="">Todos</button>
+                                <button class="filter-chip" data-filter="ia_ativa" data-value="true">🟢 IA Ativa</button>
+                                <button class="filter-chip" data-filter="ia_ativa" data-value="false">🔴 IA Off</button>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Etiqueta:</span>
+                            <select id="filterEtiqueta" class="filter-select">
+                                <option value="todos">Todas</option>
+                                <option value="novo">🆕 Novo</option>
+                                <option value="quente">🔥 Quente</option>
+                                <option value="agendado">📅 Agendado</option>
+                                <option value="fechou">✅ Fechou</option>
+                                <option value="perdeu">❌ Perdeu</option>
+                                <option value="aguardando">🕐 Aguardando</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="leads-table-wrapper">
+                        <table class="leads-table" id="leadsTable">
+                            <thead>
+                                <tr>
+                                    <th>Lead</th>
+                                    <th>Última Mensagem</th>
+                                    <th>Etiqueta</th>
+                                    <th>Vendedor</th>
+                                    <th>Status IA</th>
+                                    <th>Interação</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="leadsTableBody">
+                                <tr>
+                                    <td colspan="7" class="table-loading">
+                                        <div class="spinner"></div>
+                                        Carregando leads...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="pagination" id="pagination"></div>
+                </div>
+
+                <!-- ── EQUIPE PAGE ── -->
+                <div class="page" id="pageEquipe">
+                    <div class="page-header">
+                        <h2>Equipe</h2>
+                        <button class="btn btn-primary" id="btnNovoUsuario">+ Novo Membro</button>
+                    </div>
+
+                    <div class="cards-grid" id="equipeGrid">
+                        <div class="loading-placeholder">Carregando equipe...</div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ── MODAL: LEAD DETALHE ── -->
+    <div class="modal-overlay hidden" id="modalLead">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <div class="modal-lead-info">
+                    <div class="modal-avatar" id="modalAvatar">?</div>
+                    <div>
+                        <h3 id="modalLeadNome">Lead</h3>
+                        <span id="modalLeadTelefone" class="modal-sub"></span>
+                    </div>
+                </div>
+                <button class="modal-close" id="modalLeadClose">✕</button>
+            </div>
+            <div class="modal-body modal-two-col">
+                <div class="modal-col modal-col-left">
+                    <div class="modal-section">
+                        <h4>Status da IA</h4>
+                        <div class="ia-toggle-wrapper">
+                            <span id="iaStatusLabel" class="ia-status-label ia-on">🤖 IA Ativa</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="iaToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Etiqueta</h4>
+                        <div class="etiqueta-grid" id="etiquetaGrid"></div>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Vendedor Responsável</h4>
+                        <select id="vendedorSelect" class="form-control"></select>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Anotações</h4>
+                        <textarea id="anotacoesInput" class="form-control form-textarea" placeholder="Adicione observações sobre este lead..."></textarea>
+                    </div>
+                    <button class="btn btn-primary btn-full" id="btnSalvarLead">💾 Salvar Alterações</button>
+
+                    <div class="modal-section mt-md">
+                        <h4>Enviar Mensagem Manual</h4>
+                        <div class="msg-input-wrapper">
+                            <textarea id="msgManualInput" class="form-control form-textarea-sm" placeholder="Digite a mensagem..."></textarea>
+                            <button class="btn btn-secondary" id="btnEnviarMsg">Enviar ↗</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-col modal-col-right">
+                    <h4>Histórico da Conversa</h4>
+                    <div class="chat-view" id="chatView">
+                        <div class="chat-loading">Carregando...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── MODAL: NOVO USUÁRIO ── -->
+    <div class="modal-overlay hidden" id="modalUsuario">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Novo Membro da Equipe</h3>
+                <button class="modal-close" id="modalUsuarioClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="formUsuario">
+                    <div class="form-group">
+                        <label>Nome Completo</label>
+                        <input type="text" id="usuarioNome" class="form-control" placeholder="João Silva" required>
+                    </div>
+                    <div class="form-group">
+                        <label>E-mail</label>
+                        <input type="email" id="usuarioEmail" class="form-control" placeholder="joao@loja.com.br" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <input type="password" id="usuarioSenha" class="form-control" placeholder="Mínimo 6 caracteres" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label>Função</label>
+                        <select id="usuarioRole" class="form-control">
+                            <option value="vendedor">Vendedor</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" id="btnCancelarUsuario">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Criar Membro</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
