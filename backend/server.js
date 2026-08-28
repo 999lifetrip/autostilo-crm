@@ -12,34 +12,68 @@ const EVOLUTION_URL = process.env.EVOLUTION_API_URL || 'https://evolution.omelho
 const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || '';
 
-// ─── Postgres ────────────────────────────────────────────────────────────────
+// ─── Postgres Connection Manager with Multi-Host Fallback ───────────────────
 let dbConnected = false;
 let dbError = null;
+let activePool = null;
+let activeHost = null;
 
-const db = new Pool({
-    host: process.env.DB_HOST || 'postgresql',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'n8n',
-    user: process.env.DB_USER || 'n8n',
-    password: process.env.DB_PASSWORD || '',
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    connectionTimeoutMillis: 10000,
-});
+const candidateHosts = [
+    process.env.DB_HOST,
+    '172.17.0.1',
+    '187.127.0.79',
+    'host.docker.internal',
+    'postgresql',
+    'postgres',
+].filter(Boolean);
 
-// ─── App ─────────────────────────────────────────────────────────────────────
-const app = express();
-app.use(cors());
-app.use(express.json());
+async function tryConnectHost(host) {
+    console.log(`🔌 Testando conexão com Postgres em ${host}:5432...`);
+    const pool = new Pool({
+        host,
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'n8n',
+        user: process.env.DB_USER || 'n8n',
+        password: process.env.DB_PASSWORD || '',
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 4000,
+    });
 
-// Serve frontend estático
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
-
-// ─── Inicializar tabelas do CRM com retry ────────────────────────────────────
-async function initTables() {
     try {
-        console.log(`🔌 Tentando conectar ao Postgres em ${process.env.DB_HOST || 'postgresql'}:${process.env.DB_PORT || 5432}...`);
-        
-        await db.query(`
+        await pool.query('SELECT 1');
+        return pool;
+    } catch (e) {
+        await pool.end().catch(() => {});
+        throw e;
+    }
+}
+
+async function initTables() {
+    let pool = null;
+    let lastErr = null;
+
+    for (const host of candidateHosts) {
+        try {
+            pool = await tryConnectHost(host);
+            activeHost = host;
+            activePool = pool;
+            break;
+        } catch (e) {
+            lastErr = `${host}: ${e.message}`;
+            console.log(`  ❌ Falha em ${host}: ${e.message}`);
+        }
+    }
+
+    if (!pool) {
+        dbConnected = false;
+        dbError = lastErr;
+        console.error('⚠️ Nenhum host do Postgres respondeu. Tentando novamente em 10s...');
+        setTimeout(initTables, 10000);
+        return;
+    }
+
+    try {
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS crm_lojas (
                 id SERIAL PRIMARY KEY,
                 nome VARCHAR(100) NOT NULL,
@@ -84,18 +118,17 @@ async function initTables() {
                 criado_em TIMESTAMP DEFAULT NOW()
             );
         `);
-        console.log('✅ Tabelas CRM verificadas/criadas no Postgres');
+        console.log(`✅ Tabelas CRM verificadas/criadas no Postgres (conectado via ${activeHost})`);
 
-        // Cria loja padrão se não existir
-        const lojas = await db.query('SELECT id FROM crm_lojas LIMIT 1');
+        const lojas = await pool.query('SELECT id FROM crm_lojas LIMIT 1');
         if (lojas.rows.length === 0) {
-            const loja = await db.query(
+            const loja = await pool.query(
                 "INSERT INTO crm_lojas (nome, slug) VALUES ('AutoStiloCar', 'autostilocar') RETURNING id"
             );
             const lojaId = loja.rows[0].id;
 
             const hash = await bcrypt.hash('admin123', 10);
-            await db.query(
+            await pool.query(
                 `INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role)
                  VALUES ($1, 'Administrador', 'admin@autostilocar.com.br', $2, 'admin')`,
                 [lojaId, hash]
@@ -107,13 +140,17 @@ async function initTables() {
     } catch (e) {
         dbConnected = false;
         dbError = e.message;
-        console.error('⚠️ Aviso Postgres:', e.message);
-        console.log('🔄 Tentando reconectar ao Postgres em 10 segundos...');
+        console.error('⚠️ Erro ao criar tabelas:', e.message);
         setTimeout(initTables, 10000);
     }
 }
 
-// ─── Middleware Auth ─────────────────────────────────────────────────────────
+// ─── App ─────────────────────────────────────────────────────────────────────
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
+
 function authMiddleware(req, res, next) {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'Token necessário' });
@@ -128,11 +165,11 @@ function authMiddleware(req, res, next) {
 // ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 app.post('/api/auth/login', async (req, res) => {
     try {
-        if (!dbConnected) {
-            return res.status(503).json({ error: `Banco de dados desconectado: ${dbError || 'Conectando...'}` });
+        if (!dbConnected || !activePool) {
+            return res.status(503).json({ error: `Banco conectando: ${dbError || 'Aguarde alguns segundos...'}` });
         }
         const { email, senha } = req.body;
-        const result = await db.query(
+        const result = await activePool.query(
             `SELECT u.*, l.nome as loja_nome, l.slug as loja_slug
              FROM crm_usuarios u
              JOIN crm_lojas l ON u.loja_id = l.id
@@ -165,18 +202,18 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
         const { lojaId } = req.user;
 
         const [totalLeads, iaAtiva, escalados, hojeCount] = await Promise.all([
-            db.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1', [lojaId]),
-            db.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND ia_ativa = true', [lojaId]),
-            db.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND escalado_em IS NOT NULL AND DATE(escalado_em) = $2', [lojaId, hoje]),
-            db.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND DATE(ultima_interacao) = $2', [lojaId, hoje]),
+            activePool.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1', [lojaId]),
+            activePool.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND ia_ativa = true', [lojaId]),
+            activePool.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND escalado_em IS NOT NULL AND DATE(escalado_em) = $2', [lojaId, hoje]),
+            activePool.query('SELECT COUNT(*) FROM crm_leads WHERE loja_id = $1 AND DATE(ultima_interacao) = $2', [lojaId, hoje]),
         ]);
 
-        const etiquetas = await db.query(
+        const etiquetas = await activePool.query(
             'SELECT etiqueta, COUNT(*) as total FROM crm_leads WHERE loja_id = $1 GROUP BY etiqueta ORDER BY total DESC',
             [lojaId]
         );
 
-        const atividade = await db.query(`
+        const atividade = await activePool.query(`
             SELECT DATE(ultima_interacao) as dia, COUNT(*) as total
             FROM crm_leads
             WHERE loja_id = $1 AND ultima_interacao > NOW() - INTERVAL '7 days'
@@ -230,8 +267,8 @@ app.get('/api/leads', authMiddleware, async (req, res) => {
         }
 
         const whereStr = where.join(' AND ');
-        const countRes = await db.query(`SELECT COUNT(*) FROM crm_leads l WHERE ${whereStr}`, params);
-        const leads = await db.query(`
+        const countRes = await activePool.query(`SELECT COUNT(*) FROM crm_leads l WHERE ${whereStr}`, params);
+        const leads = await activePool.query(`
             SELECT l.*, u.nome as vendedor_nome
             FROM crm_leads l
             LEFT JOIN crm_usuarios u ON l.vendedor_id = u.id
@@ -256,7 +293,7 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
         const { lojaId } = req.user;
         const { telefone } = req.params;
 
-        const lead = await db.query(
+        const lead = await activePool.query(
             `SELECT l.*, u.nome as vendedor_nome
              FROM crm_leads l LEFT JOIN crm_usuarios u ON l.vendedor_id = u.id
              WHERE l.loja_id = $1 AND l.telefone = $2`,
@@ -264,7 +301,7 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
         );
         if (!lead.rows.length) return res.status(404).json({ error: 'Lead não encontrado' });
 
-        const historico = await db.query(
+        const historico = await activePool.query(
             `SELECT * FROM n8n_historico_mensagens WHERE session_id = $1 ORDER BY id DESC LIMIT 100`,
             [decodeURIComponent(telefone)]
         ).catch(() => ({ rows: [] }));
@@ -281,7 +318,7 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
         const { telefone } = req.params;
         const { ia_ativa, etiqueta, vendedor_id, anotacoes, nome } = req.body;
 
-        const current = await db.query(
+        const current = await activePool.query(
             'SELECT * FROM crm_leads WHERE loja_id = $1 AND telefone = $2',
             [lojaId, decodeURIComponent(telefone)]
         );
@@ -304,13 +341,13 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
         if (!updates.length) return res.json({ lead });
 
         params.push(lojaId, decodeURIComponent(telefone));
-        const updated = await db.query(
+        const updated = await activePool.query(
             `UPDATE crm_leads SET ${updates.join(', ')} WHERE loja_id = $${idx} AND telefone = $${idx + 1} RETURNING *`,
             params
         );
 
         if (ia_ativa === false || ia_ativa === 'false') {
-            await db.query(
+            await activePool.query(
                 `UPDATE n8n_status_atendimento SET escalado = true WHERE telefone = $1`,
                 [decodeURIComponent(telefone)]
             ).catch(() => {});
@@ -322,7 +359,6 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
     }
 });
 
-// Upsert lead (chamado pelo n8n)
 app.post('/api/leads/upsert', async (req, res) => {
     const secret = req.headers['x-crm-secret'];
     if (secret !== JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
@@ -330,11 +366,11 @@ app.post('/api/leads/upsert', async (req, res) => {
     try {
         const { loja_slug, telefone, nome, ultima_mensagem } = req.body;
 
-        const loja = await db.query('SELECT id FROM crm_lojas WHERE slug = $1', [loja_slug]);
+        const loja = await activePool.query('SELECT id FROM crm_lojas WHERE slug = $1', [loja_slug]);
         if (!loja.rows.length) return res.status(404).json({ error: 'Loja não encontrada' });
         const lojaId = loja.rows[0].id;
 
-        await db.query(`
+        await activePool.query(`
             INSERT INTO crm_leads (loja_id, telefone, nome, ultima_mensagem, ultima_interacao, total_mensagens)
             VALUES ($1, $2, $3, $4, NOW(), 1)
             ON CONFLICT (telefone) DO UPDATE SET
@@ -354,7 +390,7 @@ app.post('/api/leads/upsert', async (req, res) => {
 app.get('/api/usuarios', authMiddleware, async (req, res) => {
     try {
         const { lojaId } = req.user;
-        const result = await db.query(
+        const result = await activePool.query(
             'SELECT id, nome, email, role, ativo, criado_em FROM crm_usuarios WHERE loja_id = $1 ORDER BY nome',
             [lojaId]
         );
@@ -370,7 +406,7 @@ app.post('/api/usuarios', authMiddleware, async (req, res) => {
         const { lojaId } = req.user;
         const { nome, email, senha, role = 'vendedor' } = req.body;
         const hash = await bcrypt.hash(senha, 10);
-        const result = await db.query(
+        const result = await activePool.query(
             'INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, nome, email, role',
             [lojaId, nome, email, hash, role]
         );
@@ -407,12 +443,12 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
     }
 });
 
-// ─── HEALTH & STATUS CHECK ────────────────────────────────────────────────────
+// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({
     status: 'ok',
     db_connected: dbConnected,
+    db_host: activeHost || process.env.DB_HOST,
     db_error: dbError,
-    db_host: process.env.DB_HOST,
     uptime: process.uptime(),
     ts: new Date().toISOString()
 }));
@@ -422,7 +458,7 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 
-// ─── Start Web Server immediately (stays alive) ───────────────────────────────
+// ─── Start Web Server ─────────────────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log(`🚀 AutoStilo CRM rodando na porta ${PORT}`);
     initTables();
