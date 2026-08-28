@@ -386,6 +386,53 @@ app.post('/api/leads/upsert', async (req, res) => {
     }
 });
 
+// ─── WEBHOOK RECEPTOR (Evolution API -> CRM & n8n) ───────────────────────────
+app.post('/api/webhook/whatsapp', async (req, res) => {
+    try {
+        const body = req.body || {};
+        const data = body.data || body;
+        const key = data.key || {};
+        
+        const remoteJid = key.remoteJidAlt || key.remoteJid || '';
+        if (remoteJid.includes('status@broadcast') || remoteJid.includes('@g.us')) {
+            return res.json({ ignored: true });
+        }
+
+        if (key.fromMe === false) {
+            const rawPhone = (key.remoteJidAlt || key.remoteJid || '').replace('@s.whatsapp.net', '').replace('@lid', '').replace(/\D/g, '');
+            const pushName = data.pushName || 'Cliente WhatsApp';
+            const msgText = data.message?.conversation || data.message?.extendedTextMessage?.text || (data.message?.audioMessage ? '[Áudio]' : '[Mídia]');
+
+            if (rawPhone && activePool && dbConnected) {
+                const loja = await activePool.query('SELECT id FROM crm_lojas LIMIT 1');
+                const lojaId = loja.rows[0]?.id || 1;
+
+                await activePool.query(`
+                    INSERT INTO crm_leads (loja_id, telefone, nome, ultima_mensagem, ultima_interacao, total_mensagens)
+                    VALUES ($1, $2, $3, $4, NOW(), 1)
+                    ON CONFLICT (telefone) DO UPDATE SET
+                        nome = COALESCE(crm_leads.nome, EXCLUDED.nome),
+                        ultima_mensagem = EXCLUDED.ultima_mensagem,
+                        ultima_interacao = NOW(),
+                        total_mensagens = crm_leads.total_mensagens + 1
+                `, [lojaId, rawPhone, pushName, msgText]).catch(e => console.error('Erro ao upsert lead via webhook:', e.message));
+            }
+
+            // Encaminha assincronamente para o n8n
+            fetch('https://n8n.omelhorvendedoronline.com.br/webhook/5d791192-d0b2-423d-bc69-491b3b31b6ef', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            }).catch(e => console.error('Erro ao encaminhar para n8n:', e.message));
+        }
+
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('Webhook error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ─── USUÁRIOS ─────────────────────────────────────────────────────────────────
 app.get('/api/usuarios', authMiddleware, async (req, res) => {
     try {
