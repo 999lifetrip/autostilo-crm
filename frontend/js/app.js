@@ -446,21 +446,50 @@ function updateIaLabel(isOn) {
 
 document.getElementById('iaToggle').addEventListener('change', e => updateIaLabel(e.target.checked));
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+}
+
 function renderChat(historico) {
     const view = document.getElementById('chatView');
     if (!historico || !historico.length) {
         view.innerHTML = '<div class="chat-loading">Sem histórico registrado</div>';
         return;
     }
-    view.innerHTML = historico.slice().reverse().map(msg => {
-        const isHuman = msg.type === 'human' || msg.role === 'human' || msg.type === 'incoming';
-        const content = msg.data?.content || msg.content || msg.message || '…';
-        const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const html = historico.slice().reverse().map(row => {
+        let msgObj = row.message;
+        if (typeof msgObj === 'string') {
+            try { msgObj = JSON.parse(msgObj); } catch { msgObj = { content: msgObj }; }
+        }
+        msgObj = msgObj || {};
+
+        const msgType = msgObj.type || row.type || row.role || 'ai';
+        const isHuman = msgType === 'human' || msgType === 'user' || msgType === 'incoming';
+
+        let text = msgObj.content || row.content || (typeof row.message === 'string' ? row.message : '') || '';
+        if (typeof text === 'object') {
+            text = text.text || text.caption || JSON.stringify(text);
+        }
+
+        // Ignorar chamadas de ferramentas internas do LangChain
+        if (msgType === 'tool' || text.startsWith('Calling ') || (text.startsWith('[{"resultado"') && text.length > 50)) {
+            return '';
+        }
+
+        const time = row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
         return `<div class="chat-bubble ${isHuman ? 'user' : 'bot'}">
-            ${content}
+            <div class="chat-bubble-sender">${isHuman ? '👤 Cliente' : '🤖 Iago (IA)'}</div>
+            <div class="chat-bubble-text">${escapeHtml(text)}</div>
             ${time ? `<div class="chat-time">${time}</div>` : ''}
         </div>`;
-    }).join('');
+    }).filter(Boolean).join('');
+
+    view.innerHTML = html || '<div class="chat-loading">Sem mensagens para exibir</div>';
     view.scrollTop = view.scrollHeight;
 }
 
