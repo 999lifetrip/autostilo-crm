@@ -283,8 +283,8 @@
                 <div class="page" id="pageIaEditor">
                     <div class="page-header">
                         <div>
-                            <h2>🧠 Configuração & Personalidade do Iago (IA)</h2>
-                            <span class="page-subtitle">Ajuste regras de venda, promoções do momento e o tom de voz do Iago de forma simples e visual</span>
+                            <h2>🧠 Treinador do Iago (Converse com seu Robô)</h2>
+                            <span class="page-subtitle">Dê ordens em português simples, faça perguntas ou simule conversas com o Iago em tempo real</span>
                         </div>
                         <div class="page-header-actions">
                             <span class="badge-version-pill" id="promptVersionBadge">Versão 1</span>
@@ -292,14 +292,61 @@
                         </div>
                     </div>
 
-                    <!-- ABAS DE VISUALIZAÇÃO (MODO VISUAL PRÁTICO VS MODO AVANÇADO) -->
+                    <!-- ABAS DE VISUALIZAÇÃO -->
                     <div class="ia-tabs-nav">
-                        <button class="ia-tab-btn active" id="tabModoVisual">🎛️ Modo Visual Prático (Fácil)</button>
-                        <button class="ia-tab-btn" id="tabModoAvancado">📝 Modo Avançado (Prompt Completo)</button>
+                        <button class="ia-tab-btn active" id="tabModoChat">💬 Conversar & Treinar o Iago (Chat)</button>
+                        <button class="ia-tab-btn" id="tabModoVisual">🎛️ Painel de Controle Rápido</button>
+                        <button class="ia-tab-btn" id="tabModoAvancado">📝 Prompt do Sistema (Bruto)</button>
                     </div>
 
-                    <!-- ═════ MODO 1: VISUAL PRÁTICO (CARDS & SWITCHES) ═════ -->
-                    <div class="ia-modo-visual-wrap" id="viewModoVisual">
+                    <!-- ═════ ABA 1: CHAT CONVERSACIONAL COM O IAGO (HERO) ═════ -->
+                    <div class="ia-tab-content" id="viewModoChat">
+                        <div class="ia-chat-treinador-container">
+                            <!-- HEADER DO CHAT -->
+                            <div class="ia-chat-header">
+                                <div class="ia-chat-profile">
+                                    <div class="ia-chat-avatar-wrap">
+                                        <div class="ia-chat-avatar">🤖</div>
+                                        <div class="ia-chat-status-dot online"></div>
+                                    </div>
+                                    <div class="ia-chat-info">
+                                        <div class="ia-chat-name">Iago — Consultor AutoStiloCar</div>
+                                        <div class="ia-chat-subtitle">🟢 Online no WhatsApp • <span id="chatTreinadorVersao">Versão 1</span></div>
+                                    </div>
+                                </div>
+                                <div class="ia-chat-header-actions">
+                                    <button class="btn btn-ghost btn-sm" id="btnLimparChatTreinador" title="Limpar conversa">🧹 Limpar Chat</button>
+                                </div>
+                            </div>
+
+                            <!-- HISTÓRICO DE MENSAGENS -->
+                            <div class="ia-chat-body" id="chatTreinadorMessages">
+                                <div class="chat-loading-placeholder">Carregando conversa com o Iago...</div>
+                            </div>
+
+                            <!-- SUGESTÕES RÁPIDAS DE ORDENS -->
+                            <div class="ia-chat-quick-orders">
+                                <span class="quick-orders-label">⚡ Ordens Rápidas:</span>
+                                <div class="quick-orders-list">
+                                    <button type="button" class="btn-ordem-chip" data-ordem="Iago, avisa que neste sábado temos feirão com taxa zero no Ka+ e tanque cheio!">🎉 Feirão de Sábado Taxa Zero</button>
+                                    <button type="button" class="btn-ordem-chip" data-ordem="Iago, reforça que a gente aceita carro ou moto na troca e paga bem.">🏍️ Aceita Moto ou Carro na Troca</button>
+                                    <button type="button" class="btn-ordem-chip" data-ordem="Iago, como você está programado para falar com clientes negativados?">📋 Como você fala com negativados?</button>
+                                    <button type="button" class="btn-ordem-chip" data-ordem="Iago, simula como você atenderia um cliente procurando o Ford Ka+.">🚗 Simular atendimento do Ka+</button>
+                                </div>
+                            </div>
+
+                            <!-- BARRA DE ENVIO DE ORDENS -->
+                            <div class="ia-chat-footer">
+                                <textarea id="inputOrdemTreinador" class="ia-chat-input" placeholder="Diga ao Iago o que fazer ou mudar... (Ex: 'Iago, avisa que sábado tem feirão com taxa zero' ou 'Como você fala do Ka+?')" rows="1"></textarea>
+                                <button class="btn-chat-send" id="btnEnviarOrdemTreinador" title="Enviar ordem">
+                                    <span>🚀</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═════ ABA 2: PAINEL DE CONTROLE VISUAL ═════ -->
+                    <div class="ia-tab-content hidden" id="viewModoVisual">
                         <div class="ia-visual-grid">
                             
                             <!-- CARD 1: PROMOÇÃO / CAMPANHA ATIVA -->
@@ -405,41 +452,11 @@
                                 </div>
                             </div>
 
-                            <!-- CARD 4: CAIXA MÁGICA COM IA -->
-                            <div class="card ia-ai-card">
-                                <div class="card-header">
-                                    <div class="ia-card-title-wrap">
-                                        <span class="ia-icon-glow">✨</span>
-                                        <div>
-                                            <h3>Assistente Mágico — Peça qualquer alteração</h3>
-                                            <span class="card-subtitle">Escreva com suas palavras o que você quer mudar e a IA ajusta tudo</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <textarea id="sugestaoVisualInput" class="form-control form-textarea-sm" placeholder="Exemplos:&#10;• 'Quando o cliente perguntar sobre garantia, avise que damos 1 ano de garantia total!'&#10;• 'Sempre pergunte se o cliente já escolheu um carro ou se prefere ver o estoque antes de pedir o CPF.'&#10;• 'Avise que nossa loja fica ao lado do posto Shell do Tatuquara.'"></textarea>
-
-                                    <button class="btn btn-primary btn-full mt-sm" id="btnAplicarSugestaoVisual">
-                                        <span id="btnVisualRefinarText">✨ Aplicar Ajuste com IA</span>
-                                        <span id="btnVisualRefinarSpinner" class="spinner-small hidden"></span>
-                                    </button>
-
-                                    <!-- Feedback do ajuste -->
-                                    <div class="ia-refinar-result hidden" id="iaVisualResult">
-                                        <div class="ia-refinar-header">
-                                            <span class="ia-refinar-icon">✅</span>
-                                            <strong>Ajuste Aplicado com Sucesso!</strong>
-                                        </div>
-                                        <div class="ia-refinar-resumo" id="iaVisualResumo"></div>
-                                    </div>
-                                </div>
-                            </div>
-
                         </div>
                     </div>
 
-                    <!-- ═════ MODO 2: AVANÇADO (PROMPT COMPLETO) ═════ -->
-                    <div class="ia-modo-avancado-wrap hidden" id="viewModoAvancado">
+                    <!-- ═════ ABA 3: PROMPT BRUTO DO SISTEMA ═════ -->
+                    <div class="ia-tab-content hidden" id="viewModoAvancado">
                         <div class="ia-editor-grid">
                             <div class="ia-editor-col-left">
                                 <div class="card" style="height: 100%; display: flex; flex-direction: column;">
