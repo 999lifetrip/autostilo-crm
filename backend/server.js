@@ -128,6 +128,16 @@ async function initTables() {
                 notas TEXT,
                 criado_em TIMESTAMP DEFAULT NOW()
             );
+
+            CREATE TABLE IF NOT EXISTS crm_ia_chat_treinador (
+                id SERIAL PRIMARY KEY,
+                loja_id INTEGER REFERENCES crm_lojas(id),
+                role VARCHAR(20) NOT NULL,
+                content TEXT NOT NULL,
+                resumo_ajuste TEXT,
+                versao_gerada INTEGER,
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
         `);
         console.log(`✅ Tabelas CRM verificadas/criadas no Postgres (conectado via ${activeHost})`);
 
@@ -1167,6 +1177,160 @@ app.post('/api/ia/restaurar/:id', authMiddleware, async (req, res) => {
         await activePool.query(`UPDATE crm_ia_prompts SET ativo = true WHERE id = $1`, [id]);
 
         res.json({ ok: true, prompt: target.rows[0].prompt_text, metadata: target.rows[0] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── CHAT CONVERSACIONAL DE TREINAMENTO DO IAGO ──────────────────────────────
+app.get('/api/ia/chat-treinador', authMiddleware, async (req, res) => {
+    try {
+        const lojaId = req.user.lojaId;
+        const result = await activePool.query(`
+            SELECT id, role, content, resumo_ajuste, versao_gerada, criado_em
+            FROM crm_ia_chat_treinador
+            WHERE loja_id = $1
+            ORDER BY id ASC
+            LIMIT 50
+        `, [lojaId]);
+
+        if (result.rows.length === 0) {
+            // Mensagem inicial de boas-vindas do Iago
+            const welcome = {
+                role: 'assistant',
+                content: `Fala chefe! 🤝 Eu sou o **Iago**, seu consultor de vendas no WhatsApp da AutoStiloCar.\n\nVocê pode **conversar comigo e me dar qualquer ordem em português simples** que eu me atualizo na hora!\n\n💡 **Exemplos do que você pode me pedir:**\n• *"Iago, avisa que sábado tem feirão com taxa zero no Ford Ka e IPVA pago!"*\n• *"Quando o cliente for de Santa Catarina, avisa que entregamos na porta dele."*\n• *"Não pergunte mais de entrada mínima, foque em opções sem entrada."*\n• *"Como você está programado para falar com clientes negativados hoje?"*\n• *"Simula um atendimento de um cliente procurando um Classic 2013."*`,
+                resumo_ajuste: null,
+                versao_gerada: null,
+                criado_em: new Date().toISOString()
+            };
+            return res.json([welcome]);
+        }
+
+        res.json(result.rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Envia mensagem/ordem para o Iago
+app.post('/api/ia/chat-treinador', authMiddleware, async (req, res) => {
+    try {
+        const { mensagem } = req.body;
+        if (!mensagem || !mensagem.trim()) {
+            return res.status(400).json({ error: 'Mensagem não pode ser vazia' });
+        }
+
+        const lojaId = req.user.lojaId;
+        const userName = req.user.nome || 'Chefe';
+
+        // 1. Salva a mensagem do usuário no chat
+        await activePool.query(`
+            INSERT INTO crm_ia_chat_treinador (loja_id, role, content)
+            VALUES ($1, 'user', $2)
+        `, [lojaId, mensagem]);
+
+        // 2. Busca o prompt ativo atual
+        const promptRes = await activePool.query(`
+            SELECT id, prompt_text, versao FROM crm_ia_prompts
+            WHERE loja_id = $1 AND ativo = true
+            ORDER BY id DESC LIMIT 1
+        `, [lojaId]);
+        const currentPrompt = promptRes.rows[0]?.prompt_text || DEFAULT_SYSTEM_PROMPT;
+        const currentVersion = promptRes.rows[0]?.versao || 1;
+
+        // 3. Busca últimas mensagens do chat para contexto
+        const historyRes = await activePool.query(`
+            SELECT role, content FROM crm_ia_chat_treinador
+            WHERE loja_id = $1
+            ORDER BY id DESC LIMIT 6
+        `, [lojaId]);
+        const recentChat = historyRes.rows.reverse();
+
+        // 4. Executa IA com instrução de mestre/treinador
+        const systemInstruction = `Você é o próprio 'IAGO' (ou a inteligência central do consultor de vendas WhatsApp da AutoStiloCar), respondendo diretamente ao seu GERENTE/DONO DA LOJA.
+
+Sua missão neste chat:
+1. O usuário vai conversar com você e te dar ordens, perguntas ou pedidos de ajuste.
+2. Identifique se o usuário:
+   A) DEU UMA ORDEM / PEDIDO DE ALTERAÇÃO (ex: "avisa que tem taxa zero no Ka", "mude o tom", "não fale de x", "quando o cliente for de SC diga y").
+   B) FEZ UMA PERGUNTA OU PEDIDO DE SIMULAÇÃO (ex: "como você responde a um cliente negativado?", "simula como você me atenderia").
+3. SE FOR UMA ALTERAÇÃO DE REGRAS (A):
+   - Atualize o SYSTEM PROMPT do Iago incorporando a nova regra perfeitamente.
+   - PRESERVE 100% INTACTO: Variáveis de sistema ({{ $now.format('FFFF') }}), regras de mensagens curtas (1 a 2 linhas no WhatsApp), triagem obrigatória de 8 passos, validação de 11 números de CPF, ferramentas de fotos e grupo IAGO ROBO, e proibição de kitnet/caminhão.
+   - No chat com o gerente, responda de forma entusiasta, prestativa e parceira (ex: "Entendido chefe! Já atualizei minhas regras: a partir de agora vou destacar a taxa zero no Ka+. Tudo pronto e ativo no WhatsApp!").
+4. SE FOR UMA PERGUNTA OU SIMULAÇÃO (B):
+   - Responda amigavelmente ou faça a simulação solicitada. Não altere o prompt.
+
+Retorne SEMPRE em formato JSON estrito:
+{
+  "alterou_prompt": true ou false,
+  "resposta_chat": "Texto da sua resposta para o gerente neste chat (use markdown com emojis, seja prestativo e claro)",
+  "resumo_ajuste": "Resumo de 1 linha do que mudou nas suas regras (ou null se não alterou)",
+  "prompt_refinado": "System prompt completo e atualizado (se alterou_prompt for true, senão repita o atual)"
+}`;
+
+        const geminiKey = process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42SUZtX3VSSk54THZkeGR0VGY2bnd3OFoxYjJEckptR0ZOTjA2Q1g4R01Qa2c=', 'base64').toString('utf8');
+        const contextPayload = `=== SYSTEM PROMPT ATUAL DO IAGO ===\n${currentPrompt}\n\n=== HISTÓRICO DA CONVERSA COM O GERENTE ===\n${recentChat.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}\n\nGERENTE: ${mensagem}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemInstruction}\n\n${contextPayload}` }] }],
+                generationConfig: { responseMimeType: 'application/json' }
+            })
+        });
+
+        const data = await response.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        let parsed = {};
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            parsed = {
+                alterou_prompt: false,
+                resposta_chat: rawText || 'Entendido chefe!',
+                resumo_ajuste: null,
+                prompt_refinado: currentPrompt
+            };
+        }
+
+        let novaVersao = currentVersion;
+        if (parsed.alterou_prompt && parsed.prompt_refinado && parsed.prompt_refinado !== currentPrompt) {
+            novaVersao = currentVersion + 1;
+            // Desativa anteriores
+            await activePool.query(`UPDATE crm_ia_prompts SET ativo = false WHERE loja_id = $1`, [lojaId]);
+            // Insere nova versão
+            await activePool.query(`
+                INSERT INTO crm_ia_prompts (loja_id, prompt_text, versao, ativo, criado_por, notas)
+                VALUES ($1, $2, $3, true, $4, $5)
+            `, [lojaId, parsed.prompt_refinado, novaVersao, userName, parsed.resumo_ajuste || 'Ordem via Chat Treinador']);
+        }
+
+        // Salva resposta do assistente no chat
+        const botMsg = await activePool.query(`
+            INSERT INTO crm_ia_chat_treinador (loja_id, role, content, resumo_ajuste, versao_gerada)
+            VALUES ($1, 'assistant', $2, $3, $4)
+            RETURNING id, role, content, resumo_ajuste, versao_gerada, criado_em
+        `, [lojaId, parsed.resposta_chat || 'Entendido!', parsed.resumo_ajuste, parsed.alterou_prompt ? novaVersao : null]);
+
+        res.json({
+            ok: true,
+            mensagem: botMsg.rows[0],
+            alterou_prompt: !!parsed.alterou_prompt,
+            nova_versao: novaVersao,
+            prompt_atual: parsed.prompt_refinado || currentPrompt
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Limpar histórico de conversa do treinador
+app.post('/api/ia/chat-treinador/limpar', authMiddleware, async (req, res) => {
+    try {
+        await activePool.query(`DELETE FROM crm_ia_chat_treinador WHERE loja_id = $1`, [req.user.lojaId]);
+        res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
