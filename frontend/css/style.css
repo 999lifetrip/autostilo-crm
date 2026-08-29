@@ -838,15 +838,372 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(16, 185, 129, 0.4); }
 
-@media (max-width: 768px) {
-    .sidebar { transform: translateX(-100%); }
-    .sidebar.open { transform: none; }
-    .main { margin-left: 0; }
-    .btn-menu-toggle { display: block; }
-    .dashboard-grid { grid-template-columns: 1fr; }
-    .modal-two-col { grid-template-columns: 1fr; }
-    .modal-col-left { border-right: none; border-bottom: 1px solid var(--border); }
-    .stats-grid { grid-template-columns: 1fr 1fr; }
-    .cards-grid { grid-template-columns: 1fr; }
+/* ─── Interactive IA Toggle Button (Tabela & Modal) ─────────── */
+.ia-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    user-select: none;
 }
+.ia-toggle-btn:hover {
+    transform: translateY(-1px) scale(1.03);
+}
+.ia-toggle-btn.ia-on {
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: var(--brand-accent);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+.ia-toggle-btn.ia-on:hover {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+}
+.ia-toggle-btn.ia-off {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: #f87171;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.15);
+}
+.ia-toggle-btn.ia-off:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: var(--red);
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.3);
+}
+.ia-toggle-switch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.2s;
+}
+.ia-toggle-btn.ia-on .ia-toggle-switch {
+    background: #34d399;
+    box-shadow: 0 0 6px #34d399;
+}
+.ia-toggle-btn.ia-off .ia-toggle-switch {
+    background: #f87171;
+    box-shadow: 0 0 6px #f87171;
+}
+
+/* ─── Layout Helpers ─────────────────────────────────────────── */
+.form-row-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem;
+}
+.form-row-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+}
+.checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.checkbox-label input[type="checkbox"] {
+    accent-color: var(--brand-primary);
+    width: 16px;
+    height: 16px;
+}
+
+/* ─── Estoque de Veículos Grid & Cards ────────────────────────── */
+.veiculos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 1.25rem;
+}
+.veiculo-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: all var(--transition);
+    backdrop-filter: blur(12px);
+}
+.veiculo-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-md), var(--shadow-neon);
+}
+.veiculo-card.is-destaque {
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.12);
+}
+.veiculo-thumb-wrap {
+    position: relative;
+    width: 100%;
+    height: 175px;
+    background: #0d1a13;
+    overflow: hidden;
+}
+.veiculo-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+.veiculo-card:hover .veiculo-thumb {
+    transform: scale(1.04);
+}
+.veiculo-thumb-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    background: linear-gradient(135deg, #091a11, #041009);
+}
+.veiculo-thumb-empty span:first-child {
+    font-size: 2.2rem;
+    margin-bottom: 0.35rem;
+    opacity: 0.6;
+}
+.badge-photo-count {
+    position: absolute;
+    bottom: 0.6rem;
+    left: 0.6rem;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.badge-card-destaque {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    background: rgba(245, 158, 11, 0.9);
+    color: #000;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.veiculo-info {
+    padding: 1.1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.veiculo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.veiculo-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.2;
+}
+.veiculo-marca-ano {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.veiculo-preco {
+    font-size: 1.15rem;
+    font-weight: 900;
+    color: var(--brand-accent);
+    letter-spacing: -0.02em;
+}
+.veiculo-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.v-tag {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.veiculo-diferenciais-preview {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    max-height: 38px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.veiculo-actions {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.4rem;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+/* ─── Photo Dropzone ─────────────────────────────────────────── */
+.photo-dropzone {
+    border: 2px dashed rgba(16, 185, 129, 0.35);
+    background: rgba(16, 185, 129, 0.02);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    transition: all var(--transition);
+}
+.photo-dropzone.dragover {
+    border-color: var(--brand-primary);
+    background: rgba(16, 185, 129, 0.08);
+    transform: scale(1.01);
+}
+.dropzone-inner {
+    text-align: center;
+    cursor: pointer;
+    padding: 1rem 0;
+}
+.dropzone-icon {
+    font-size: 2.2rem;
+    display: block;
+    margin-bottom: 0.35rem;
+}
+.dropzone-text {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--brand-accent);
+    display: block;
+}
+.dropzone-sub {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 0.25rem;
+}
+.photos-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 0.6rem;
+    margin-top: 1rem;
+}
+.preview-thumb-card {
+    position: relative;
+    height: 75px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+.preview-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.preview-thumb-delete {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #f87171;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.preview-thumb-delete:hover {
+    background: var(--red);
+    color: #fff;
+}
+
+/* ─── Gallery Modal ──────────────────────────────────────────── */
+.gallery-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+.gallery-count-badge {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.car-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.9rem;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 0.4rem;
+}
+.gallery-photo-card {
+    position: relative;
+    height: 140px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: #091a11;
+    transition: transform var(--transition);
+}
+.gallery-photo-card:hover {
+    transform: scale(1.02);
+    border-color: var(--border-accent);
+}
+.gallery-photo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+}
+.gallery-photo-delete {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.gallery-photo-delete:hover {
+    background: var(--red);
+    color: #fff;
+}
+
+@media (max-width: 768px) {
+    .form-row-3, .form-row-2 { grid-template-columns: 1fr; }
+    .veiculos-grid { grid-template-columns: 1fr; }
+}
+
 
