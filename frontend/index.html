@@ -75,6 +75,11 @@
                     <span class="nav-label">Estoque de Carros</span>
                     <span class="nav-badge" id="badgeVeiculos">0</span>
                 </button>
+                <button class="nav-item" data-page="ia-editor" id="navIaEditor">
+                    <span class="nav-icon">🧠</span>
+                    <span class="nav-label">Editor da IA</span>
+                    <span class="nav-badge" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size:0.65rem;">IAGO</span>
+                </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
                     <span class="nav-icon">🏎️</span>
                     <span class="nav-label">Vendedores</span>
@@ -271,6 +276,108 @@
 
                     <div class="veiculos-grid" id="veiculosGrid">
                         <div class="loading-placeholder">Carregando estoque de veículos...</div>
+                    </div>
+                </div>
+
+                <!-- ── IA PROMPT EDITOR PAGE ── -->
+                <div class="page" id="pageIaEditor">
+                    <div class="page-header">
+                        <div>
+                            <h2>🧠 Editor da IA — Iago (WhatsApp)</h2>
+                            <span class="page-subtitle">Personalize as regras, argumentos de vendas e promoções do Iago com refinamento inteligente</span>
+                        </div>
+                        <div class="page-header-actions">
+                            <span class="badge-version-pill" id="promptVersionBadge">Versão 1</span>
+                            <button class="btn btn-primary" id="btnSalvarPrompt">💾 Salvar & Publicar no WhatsApp</button>
+                        </div>
+                    </div>
+
+                    <div class="ia-editor-grid">
+                        <!-- COLUNA ESQUERDA: EDITOR DO PROMPT -->
+                        <div class="ia-editor-col-left">
+                            <div class="card" style="height: 100%; display: flex; flex-direction: column;">
+                                <div class="card-header" style="justify-content: space-between;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <h3>📝 System Prompt do Agente</h3>
+                                        <span class="token-count-pill" id="promptCharCount">0 caracteres</span>
+                                    </div>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-ghost btn-sm" id="btnRestaurarPadrao" title="Restaurar prompt padrão de fábrica">
+                                            🔄 Restaurar Padrão
+                                        </button>
+                                        <select id="selectHistoricoPrompt" class="form-control form-control-sm" style="max-width: 170px;">
+                                            <option value="">⏮️ Histórico...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body" style="flex: 1; display: flex; flex-direction: column; padding: 12px;">
+                                    <textarea id="promptTextarea" class="prompt-code-editor" spellcheck="false" placeholder="Carregando prompt do Iago..."></textarea>
+                                    <div class="prompt-editor-footer">
+                                        <span class="prompt-hint">💡 O Iago consulta esse prompt a cada mensagem no WhatsApp. Todas as variáveis e regras de ferramentas são validadas automaticamente.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- COLUNA DIREITA: ASSISTENTE DE SUGESTÕES COM IA -->
+                        <div class="ia-editor-col-right">
+                            <div class="card ia-ai-card">
+                                <div class="card-header">
+                                    <h3>🤖 Assistente de Sugestões com IA</h3>
+                                </div>
+                                <div class="card-body">
+                                    <p class="ia-ai-desc">
+                                        Escreva em linguagem natural o que você quer mudar no Iago. A IA irá <strong>mesclar sua instrução</strong> no prompt mantendo todas as regras do sistema, validações de CPF, formato de áudios e ferramentas 100% blindadas!
+                                    </p>
+
+                                    <div class="form-group mt-sm">
+                                        <label>Sua Sugestão / Nova Regra para o Iago:</label>
+                                        <textarea id="sugestaoIaInput" class="form-control form-textarea-sm" placeholder="Exemplos:&#10;• 'Avisa que no fim de semana teremos feirão com taxa zero no Ka+ e tanque cheio!'&#10;• 'Antes de pedir o CPF, pergunte se o cliente já possui CNH válida.'&#10;• 'Seja mais agressivo no fechamento quando o cliente falar que está com pressa.'"></textarea>
+                                    </div>
+
+                                    <button class="btn btn-primary btn-full mt-sm" id="btnRefinarPrompt">
+                                        <span id="btnRefinarText">✨ Refinar Prompt com IA</span>
+                                        <span id="btnRefinarSpinner" class="spinner-small hidden"></span>
+                                    </button>
+
+                                    <!-- CAIXA DE RESULTADO DO REFINAMENTO -->
+                                    <div class="ia-refinar-result hidden" id="iaRefinarResult">
+                                        <div class="ia-refinar-header">
+                                            <span class="ia-refinar-icon">✅</span>
+                                            <strong>Sugestão Processada com Sucesso!</strong>
+                                        </div>
+                                        <div class="ia-refinar-resumo" id="iaRefinarResumo"></div>
+                                        <div class="ia-refinar-actions">
+                                            <button class="btn btn-secondary btn-sm" id="btnDesfazerRefinamento">Desfazer</button>
+                                            <button class="btn btn-primary btn-sm" id="btnAplicarESalvar">Aprovar e Publicar 🚀</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CARD DE ATALHOS / BOAS PRÁTICAS -->
+                            <div class="card mt-md">
+                                <div class="card-header">
+                                    <h3>🎯 Sugestões Rápidas de Campanha</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="sugestoes-chips-list">
+                                        <button class="btn-sugestao-chip" data-sugestao="Avisa que neste sábado temos taxa especial e aprovação com zero de entrada para todo o estoque!">
+                                            🎉 Feirão de Sábado Zero Entrada
+                                        </button>
+                                        <button class="btn-sugestao-chip" data-sugestao="Reforce que aceitamos carro ou moto usada na troca e pagamos acima da média do mercado.">
+                                            🏍️ Aceita Moto ou Carro na Troca
+                                        </button>
+                                        <button class="btn-sugestao-chip" data-sugestao="Destaque que todos os carros saem com laudo cautelar aprovado e garantia de motor e câmbio.">
+                                            🛡️ Foco em Segurança e Laudo Cautelar
+                                        </button>
+                                        <button class="btn-sugestao-chip" data-sugestao="Ao falar com cliente negativado, reforce com entusiasmo que trabalhamos com financeiras especializadas em score baixo.">
+                                            🤝 Atendimento Positivo para Negativados
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
