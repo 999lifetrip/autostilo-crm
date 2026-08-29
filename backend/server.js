@@ -625,6 +625,32 @@ app.post('/api/veiculos/:id/capa/:fotoId', authMiddleware, async (req, res) => {
     }
 });
 
+app.post('/api/leads/upsert-direct', async (req, res) => {
+    try {
+        const { telefone, nome, mensagem } = req.body;
+        if (!telefone) return res.status(400).json({ error: 'Telefone é obrigatório' });
+
+        const telClean = telefone.replace(/\D/g, '');
+        await activePool.query(`
+            INSERT INTO crm_leads (loja_id, telefone, nome, ultima_mensagem, ultima_interacao, total_mensagens)
+            VALUES (1, $1, $2, $3, NOW(), 1)
+            ON CONFLICT (telefone) DO UPDATE SET
+                nome = CASE 
+                    WHEN (crm_leads.nome IS NULL OR crm_leads.nome = '' OR crm_leads.nome = '(sem nome)') AND EXCLUDED.nome IS NOT NULL AND EXCLUDED.nome != ''
+                    THEN EXCLUDED.nome 
+                    ELSE crm_leads.nome 
+                END,
+                ultima_mensagem = EXCLUDED.ultima_mensagem,
+                ultima_interacao = NOW(),
+                total_mensagens = crm_leads.total_mensagens + 1
+        `, [telClean, nome || null, mensagem || 'Nova mensagem']);
+
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/leads/upsert', async (req, res) => {
     const secret = req.headers['x-crm-secret'];
     if (secret !== JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
