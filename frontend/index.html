@@ -66,18 +66,18 @@
                     <span class="nav-label">Dashboard</span>
                 </button>
                 <button class="nav-item" data-page="leads" id="navLeads">
-                    <span class="nav-icon">👥</span>
-                    <span class="nav-label">Leads WhatsApp</span>
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-label">WhatsApp</span>
                     <span class="nav-badge" id="badgeLeads">0</span>
                 </button>
                 <button class="nav-item" data-page="veiculos" id="navVeiculos">
                     <span class="nav-icon">🚗</span>
-                    <span class="nav-label">Estoque de Carros</span>
+                    <span class="nav-label">Anúncio / Estoque</span>
                     <span class="nav-badge" id="badgeVeiculos">0</span>
                 </button>
                 <button class="nav-item" data-page="ia-editor" id="navIaEditor">
-                    <span class="nav-icon">🧠</span>
-                    <span class="nav-label">Editor da IA</span>
+                    <span class="nav-icon">🤖</span>
+                    <span class="nav-label">Editor do Robô</span>
                     <span class="nav-badge" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size:0.65rem;">IAGO</span>
                 </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
@@ -191,7 +191,7 @@
                 <div class="page" id="pageLeads">
                     <div class="page-header">
                         <div>
-                            <h2>Gestão de Leads</h2>
+                            <h2>WhatsApp</h2>
                             <span class="page-subtitle">Acompanhe e assuma conversas do WhatsApp em tempo real</span>
                         </div>
                         <div class="page-header-actions">
@@ -203,39 +203,27 @@
                     </div>
 
                     <div class="filters-bar">
-                        <div class="filter-group">
-                            <span class="filter-label">Status IA:</span>
-                            <div class="filter-chips">
-                                <button class="filter-chip active" data-filter="ia_ativa" data-value="">Todos</button>
-                                <button class="filter-chip" data-filter="ia_ativa" data-value="true">🟢 IA Ativa</button>
-                                <button class="filter-chip" data-filter="ia_ativa" data-value="false">🔴 Com Vendedor</button>
-                            </div>
-                        </div>
-                        <div class="filter-group">
-                            <span class="filter-label">Funil:</span>
-                            <select id="filterEtiqueta" class="filter-select">
-                                <option value="todos">Todas as Etiquetas</option>
-                                <option value="novo">🆕 Novo Lead</option>
-                                <option value="quente">🔥 Quente (Interesse)</option>
-                                <option value="agendado">📅 Test Drive Agendado</option>
-                                <option value="fechou">✅ Venda Fechada</option>
-                                <option value="perdeu">❌ Perdeu</option>
-                                <option value="aguardando">🕐 Aguardando Documentos</option>
-                            </select>
+                        <div class="filter-chips" id="etiquetasFilter">
+                            <button class="filter-chip active" data-etiqueta="">Todos os Leads</button>
+                            <button class="filter-chip" data-etiqueta="novo">🆕 Novos</button>
+                            <button class="filter-chip" data-etiqueta="qualificado">⭐ Triagem OK</button>
+                            <button class="filter-chip" data-etiqueta="agendado">📅 Agendados</button>
+                            <button class="filter-chip" data-etiqueta="fechado">🤝 Fechados</button>
+                            <button class="filter-chip" data-etiqueta="perdido">❌ Perdidos</button>
+                            <button class="filter-chip" data-etiqueta="escalado">🔔 Escalados</button>
                         </div>
                     </div>
 
-                    <div class="leads-table-wrapper">
-                        <table class="leads-table" id="leadsTable">
+                    <div class="table-card">
+                        <table class="data-table" id="leadsTable">
                             <thead>
                                 <tr>
-                                    <th>Cliente</th>
-                                    <th>Última Mensagem</th>
-                                    <th>Funil / Etiqueta</th>
-                                    <th>Vendedor</th>
+                                    <th>Lead / Telefone</th>
                                     <th>Status IA</th>
+                                    <th>Etiqueta</th>
+                                    <th>Última Mensagem</th>
                                     <th>Última Interação</th>
-                                    <th>Ação</th>
+                                    <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="leadsTableBody">
@@ -253,7 +241,7 @@
                 <div class="page" id="pageVeiculos">
                     <div class="page-header">
                         <div>
-                            <h2>Estoque & Carros do Anúncio</h2>
+                            <h2>Anúncio / Estoque</h2>
                             <span class="page-subtitle">Cadastre carros e fotos diretamente no CRM para o Iago enviar aos clientes (Fotos do anúncio ou fotos do estoque completo)</span>
                         </div>
                         <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Cadastrar Carro</button>
@@ -283,8 +271,8 @@
                 <div class="page" id="pageIaEditor">
                     <div class="page-header">
                         <div>
-                            <h2>🧠 Treinador do Iago (Converse com seu Robô)</h2>
-                            <span class="page-subtitle">Dê ordens em português simples, faça perguntas ou simule conversas com o Iago em tempo real</span>
+                            <h2>🤖 Editor do Robô</h2>
+                            <span class="page-subtitle">Converse e treine o Iago com ordens simples em português</span>
                         </div>
                         <div class="page-header-actions">
                             <span class="badge-version-pill" id="promptVersionBadge">Versão 1</span>
