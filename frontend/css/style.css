@@ -714,7 +714,19 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
     align-self: flex-end;
     border-radius: var(--radius-md) 4px var(--radius-md) var(--radius-md);
 }
-.chat-time { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.25rem; }
+.chat-bubble-sender {
+    font-size: 0.68rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    opacity: 0.75;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.chat-bubble-text {
+    line-height: 1.45;
+    word-break: break-word;
+}
+.chat-time { font-size: 0.68rem; color: var(--text-muted); margin-top: 0.35rem; }
 
 /* Toast */
 .toast {
