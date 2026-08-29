@@ -166,10 +166,10 @@ document.getElementById('btnLogout').addEventListener('click', logout);
 // ─── Navigation ────────────────────────────────────────────────
 const pages = {
     dashboard: { page: 'pageDashboard', title: 'Dashboard Geral', nav: 'navDashboard' },
-    leads: { page: 'pageLeads', title: 'Gestão de Leads WhatsApp', nav: 'navLeads' },
-    veiculos: { page: 'pageVeiculos', title: 'Estoque & Carros do Anúncio', nav: 'navVeiculos' },
-    iaEditor: { page: 'pageIaEditor', title: 'Editor da IA (Iago WhatsApp)', nav: 'navIaEditor' },
-    equipe: { page: 'pageEquipe', title: 'Equipe de Vendas', nav: 'navEquipe' },
+    leads: { page: 'pageLeads', title: 'WhatsApp', nav: 'navLeads' },
+    veiculos: { page: 'pageVeiculos', title: 'Anúncio / Estoque', nav: 'navVeiculos' },
+    iaEditor: { page: 'pageIaEditor', title: 'Editor do Robô', nav: 'navIaEditor' },
+    equipe: { page: 'pageEquipe', title: 'Vendedores', nav: 'navEquipe' },
 };
 
 function navigate(rawKey) {
