@@ -1069,8 +1069,11 @@ async function loadIaPrompt() {
         updatePromptStats(data.prompt || '');
         if (data.metadata) {
             document.getElementById('promptVersionBadge').textContent = `Versão ${data.metadata.versao || 1}`;
+            const chatVer = document.getElementById('chatTreinadorVersao');
+            if (chatVer) chatVer.textContent = `Versão ${data.metadata.versao || 1}`;
         }
         carregarHistoricoPrompts();
+        loadChatTreinador();
     } catch (e) {
         toast('Erro ao carregar prompt da IA: ' + e.message, 'error');
     }
@@ -1176,24 +1179,210 @@ document.getElementById('btnAplicarESalvar')?.addEventListener('click', async ()
     document.getElementById('sugestaoIaInput').value = '';
 });
 
-// ─── TABS MODO VISUAL / AVANÇADO ──────────────────────────────
+// ─── TABS MODO CHAT / VISUAL / AVANÇADO ───────────────────────
+const tabModoChat = document.getElementById('tabModoChat');
 const tabModoVisual = document.getElementById('tabModoVisual');
 const tabModoAvancado = document.getElementById('tabModoAvancado');
+const viewModoChat = document.getElementById('viewModoChat');
 const viewModoVisual = document.getElementById('viewModoVisual');
 const viewModoAvancado = document.getElementById('viewModoAvancado');
 
-tabModoVisual?.addEventListener('click', () => {
-    tabModoVisual.classList.add('active');
-    tabModoAvancado.classList.remove('active');
-    viewModoVisual.classList.remove('hidden');
-    viewModoAvancado.classList.add('hidden');
+function switchIaTab(tab) {
+    [tabModoChat, tabModoVisual, tabModoAvancado].forEach(t => t?.classList.remove('active'));
+    [viewModoChat, viewModoVisual, viewModoAvancado].forEach(v => v?.classList.add('hidden'));
+
+    if (tab === 'chat') {
+        tabModoChat?.classList.add('active');
+        viewModoChat?.classList.remove('hidden');
+        loadChatTreinador();
+    } else if (tab === 'visual') {
+        tabModoVisual?.classList.add('active');
+        viewModoVisual?.classList.remove('hidden');
+    } else if (tab === 'avancado') {
+        tabModoAvancado?.classList.add('active');
+        viewModoAvancado?.classList.remove('hidden');
+    }
+}
+
+tabModoChat?.addEventListener('click', () => switchIaTab('chat'));
+tabModoVisual?.addEventListener('click', () => switchIaTab('visual'));
+tabModoAvancado?.addEventListener('click', () => switchIaTab('avancado'));
+
+// ─── CHAT CONVERSACIONAL COM O IAGO (TREINADOR) ───────────────
+async function loadChatTreinador() {
+    const container = document.getElementById('chatTreinadorMessages');
+    if (!container) return;
+
+    try {
+        const msgs = await api('/ia/chat-treinador');
+        renderChatTreinadorMessages(msgs);
+    } catch (e) {
+        container.innerHTML = `<div class="empty-state">Erro ao carregar chat: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderChatTreinadorMessages(msgs) {
+    const container = document.getElementById('chatTreinadorMessages');
+    if (!container) return;
+
+    if (!msgs || msgs.length === 0) {
+        container.innerHTML = `<div class="empty-state">Nenhuma mensagem ainda. Diga um 'Oi' para o Iago!</div>`;
+        return;
+    }
+
+    container.innerHTML = msgs.map(m => {
+        const isUser = m.role === 'user';
+        const hora = m.criado_em ? new Date(m.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        
+        // Formata markdown simples (negrito, itálico, quebras)
+        let formattedText = escapeHtml(m.content)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/\n/g, '<br>');
+
+        let adjustmentBadge = '';
+        if (m.resumo_ajuste && m.versao_gerada) {
+            adjustmentBadge = `
+                <div class="ia-rule-adjusted-badge">
+                    <span class="ia-rule-adjusted-icon">🚀</span>
+                    <div>
+                        <strong>Regra Atualizada & Publicada no WhatsApp (v${m.versao_gerada})!</strong><br>
+                        <span style="opacity: 0.9;">${escapeHtml(m.resumo_ajuste)}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="ia-chat-msg ${isUser ? 'user' : 'assistant'}">
+                <div class="ia-chat-bubble">
+                    ${formattedText}
+                    ${adjustmentBadge}
+                </div>
+                <span class="ia-chat-time">${hora}</span>
+            </div>
+        `;
+    }).join('');
+
+    container.scrollTop = container.scrollHeight;
+}
+
+async function enviarOrdemTreinador(mensagemTexto = null) {
+    const input = document.getElementById('inputOrdemTreinador');
+    const msg = (mensagemTexto || input.value).trim();
+    if (!msg) return;
+
+    const btn = document.getElementById('btnEnviarOrdemTreinador');
+    const container = document.getElementById('chatTreinadorMessages');
+
+    // Limpa input
+    if (!mensagemTexto) input.value = '';
+
+    // Adiciona balão do usuário na hora
+    const userMsgEl = document.createElement('div');
+    userMsgEl.className = 'ia-chat-msg user';
+    userMsgEl.innerHTML = `
+        <div class="ia-chat-bubble">${escapeHtml(msg).replace(/\n/g, '<br>')}</div>
+        <span class="ia-chat-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+    `;
+    container.appendChild(userMsgEl);
+
+    // Balão de digitando do Iago
+    const typingEl = document.createElement('div');
+    typingEl.className = 'ia-chat-msg assistant';
+    typingEl.id = 'iagoTypingMsg';
+    typingEl.innerHTML = `
+        <div class="ia-chat-bubble" style="display: flex; align-items: center; gap: 8px;">
+            <span>Iago está pensando e ajustando as regras</span>
+            <span class="spinner-small"></span>
+        </div>
+    `;
+    container.appendChild(typingEl);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+        btn.disabled = true;
+        const res = await api('/ia/chat-treinador', {
+            method: 'POST',
+            body: { mensagem: msg }
+        });
+
+        typingEl.remove();
+
+        if (res.mensagem) {
+            let formattedText = escapeHtml(res.mensagem.content)
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+
+            let adjustmentBadge = '';
+            if (res.mensagem.resumo_ajuste && res.mensagem.versao_gerada) {
+                adjustmentBadge = `
+                    <div class="ia-rule-adjusted-badge">
+                        <span class="ia-rule-adjusted-icon">🚀</span>
+                        <div>
+                            <strong>Regra Atualizada & Publicada no WhatsApp (v${res.mensagem.versao_gerada})!</strong><br>
+                            <span style="opacity: 0.9;">${escapeHtml(res.mensagem.resumo_ajuste)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const botMsgEl = document.createElement('div');
+            botMsgEl.className = 'ia-chat-msg assistant';
+            botMsgEl.innerHTML = `
+                <div class="ia-chat-bubble">
+                    ${formattedText}
+                    ${adjustmentBadge}
+                </div>
+                <span class="ia-chat-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+            `;
+            container.appendChild(botMsgEl);
+            container.scrollTop = container.scrollHeight;
+
+            if (res.alterou_prompt) {
+                document.getElementById('promptVersionBadge').textContent = `Versão ${res.nova_versao}`;
+                document.getElementById('chatTreinadorVersao').textContent = `Versão ${res.nova_versao}`;
+                document.getElementById('promptTextarea').value = res.prompt_atual;
+                updatePromptStats(res.prompt_atual);
+                toast(`🚀 Iago atualizado para a Versão ${res.nova_versao} no WhatsApp!`, 'success');
+            }
+        }
+    } catch (e) {
+        typingEl.remove();
+        toast('Erro ao conversar com Iago: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        input.focus();
+    }
+}
+
+document.getElementById('btnEnviarOrdemTreinador')?.addEventListener('click', () => enviarOrdemTreinador());
+
+document.getElementById('inputOrdemTreinador')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        enviarOrdemTreinador();
+    }
 });
 
-tabModoAvancado?.addEventListener('click', () => {
-    tabModoAvancado.classList.add('active');
-    tabModoVisual.classList.remove('active');
-    viewModoAvancado.classList.remove('hidden');
-    viewModoVisual.classList.add('hidden');
+// Chips de ordens rápidas
+document.querySelectorAll('.btn-ordem-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+        enviarOrdemTreinador(btn.dataset.ordem);
+    });
+});
+
+// Limpar chat
+document.getElementById('btnLimparChatTreinador')?.addEventListener('click', async () => {
+    if (!confirm('Deseja limpar o histórico desta conversa com o Iago? (As regras salvas no robô continuam ativas)')) return;
+    try {
+        await api('/ia/chat-treinador/limpar', { method: 'POST' });
+        loadChatTreinador();
+        toast('Conversa limpa.');
+    } catch (e) {
+        toast(e.message, 'error');
+    }
 });
 
 // Tags de sugestão rápida no Modo Visual
