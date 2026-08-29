@@ -70,6 +70,11 @@
                     <span class="nav-label">Leads WhatsApp</span>
                     <span class="nav-badge" id="badgeLeads">0</span>
                 </button>
+                <button class="nav-item" data-page="veiculos" id="navVeiculos">
+                    <span class="nav-icon">🚗</span>
+                    <span class="nav-label">Estoque de Carros</span>
+                    <span class="nav-badge" id="badgeVeiculos">0</span>
+                </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
                     <span class="nav-icon">🏎️</span>
                     <span class="nav-label">Vendedores</span>
@@ -239,6 +244,36 @@
                     <div class="pagination" id="pagination"></div>
                 </div>
 
+                <!-- ── VEICULOS PAGE (ESTOQUE & FOTOS) ── -->
+                <div class="page" id="pageVeiculos">
+                    <div class="page-header">
+                        <div>
+                            <h2>Estoque de Veículos</h2>
+                            <span class="page-subtitle">Cadastre carros e fotos diretamente no CRM para o Iago enviar aos clientes</span>
+                        </div>
+                        <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Novo Veículo</button>
+                    </div>
+
+                    <div class="filters-bar">
+                        <div class="search-box" style="max-width: 320px;">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="searchVeiculos" placeholder="Buscar por modelo, marca ou ano...">
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Filtrar:</span>
+                            <div class="filter-chips">
+                                <button class="filter-chip active" data-filter-veiculo="destaque" data-value="">Todos</button>
+                                <button class="filter-chip" data-filter-veiculo="destaque" data-value="true">⭐ Destaques (Anúncio)</button>
+                                <button class="filter-chip" data-filter-veiculo="ativo" data-value="true">🟢 Ativos no WhatsApp</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="veiculos-grid" id="veiculosGrid">
+                        <div class="loading-placeholder">Carregando estoque de veículos...</div>
+                    </div>
+                </div>
+
                 <!-- ── EQUIPE PAGE ── -->
                 <div class="page" id="pageEquipe">
                     <div class="page-header">
@@ -348,6 +383,137 @@
                         <button type="submit" class="btn btn-primary">Cadastrar</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── MODAL: NOVO / EDITAR VEÍCULO ── -->
+    <div class="modal-overlay hidden" id="modalVeiculo">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <h3 id="modalVeiculoTitle">🚗 Cadastrar Novo Veículo</h3>
+                <button class="modal-close" id="modalVeiculoClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <form id="formVeiculo">
+                    <input type="hidden" id="veiculoId">
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>Modelo do Carro *</label>
+                            <input type="text" id="veiculoModelo" class="form-control" placeholder="Ex: Ka, Classic, Gol, Onix" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Marca / Fabricante</label>
+                            <input type="text" id="veiculoMarca" class="form-control" placeholder="Ex: Ford, Chevrolet, VW, Fiat">
+                        </div>
+                        <div class="form-group">
+                            <label>Ano Fabricação / Modelo</label>
+                            <input type="text" id="veiculoAno" class="form-control" placeholder="Ex: 2017 ou 2016/2017">
+                        </div>
+                    </div>
+
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>Preço de Venda (R$)</label>
+                            <input type="number" step="0.01" id="veiculoPreco" class="form-control" placeholder="Ex: 42000">
+                        </div>
+                        <div class="form-group">
+                            <label>Cor</label>
+                            <input type="text" id="veiculoCor" class="form-control" placeholder="Ex: Branco, Prata, Preto">
+                        </div>
+                        <div class="form-group">
+                            <label>Câmbio</label>
+                            <select id="veiculoCambio" class="form-control">
+                                <option value="Manual">Manual</option>
+                                <option value="Automático">Automático</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label>Quilometragem (KM)</label>
+                            <input type="number" id="veiculoKm" class="form-control" placeholder="Ex: 78000">
+                        </div>
+                        <div class="form-group">
+                            <label>Combustível</label>
+                            <input type="text" id="veiculoCombustivel" class="form-control" placeholder="Ex: Flex, Gasolina">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Opcionais e Itens de Série</label>
+                        <input type="text" id="veiculoOpcionais" class="form-control" placeholder="Ex: Ar-condicionado, Direção elétrica, Vidros elétricos, Multimídia Bluetooth">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Diferenciais & Condições (Iago usa na conversa)</label>
+                        <input type="text" id="veiculoDiferenciais" class="form-control" placeholder="Ex: Revisado, Com laudo cautelar aprovado, 1 ano de garantia, Aceita troca">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Descrição Completa</label>
+                        <textarea id="veiculoDescricao" class="form-control form-textarea-sm" placeholder="Resumo do carro para o consultor e IA..."></textarea>
+                    </div>
+
+                    <div class="form-row-2" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="veiculoDestaque">
+                            <span>⭐ Carro em Destaque (Carro do Anúncio)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="veiculoAtivo" checked>
+                            <span>🟢 Ativo (Liberado para IA enviar fotos)</span>
+                        </label>
+                    </div>
+
+                    <!-- FOTOS UPLOAD DRAG & DROP -->
+                    <div class="form-group">
+                        <label>📸 Fotos do Carro (O Iago enviará essas fotos no WhatsApp)</label>
+                        <div class="photo-dropzone" id="photoDropzone">
+                            <input type="file" id="photoInput" multiple accept="image/*" class="hidden">
+                            <div class="dropzone-inner" onclick="document.getElementById('photoInput').click()">
+                                <span class="dropzone-icon">📷</span>
+                                <span class="dropzone-text">Clique ou arraste as fotos do carro aqui</span>
+                                <span class="dropzone-sub">Suporta JPG, PNG, WEBP (selecione várias fotos de uma vez)</span>
+                            </div>
+                            <div class="photos-preview-grid" id="photosPreviewGrid"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-ghost" id="btnCancelarVeiculo">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="btnSalvarVeiculo">Salvar Veículo e Fotos</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── MODAL: GALERIA DE FOTOS DO VEÍCULO ── -->
+    <div class="modal-overlay hidden" id="modalFotosVeiculo">
+        <div class="modal modal-large">
+            <div class="modal-header">
+                <div class="modal-lead-info">
+                    <div class="modal-avatar" style="background: var(--green-glow); color: var(--green);">🚗</div>
+                    <div>
+                        <h3 id="galleryCarTitle">Fotos do Veículo</h3>
+                        <span id="galleryCarSub" class="modal-sub"></span>
+                    </div>
+                </div>
+                <button class="modal-close" id="modalFotosClose">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="gallery-toolbar">
+                    <input type="file" id="galleryUploadInput" multiple accept="image/*" class="hidden">
+                    <button class="btn btn-primary btn-sm" onclick="document.getElementById('galleryUploadInput').click()">
+                        📷 + Adicionar Mais Fotos
+                    </button>
+                    <span class="gallery-count-badge" id="galleryCountBadge">0 fotos cadastradas</span>
+                </div>
+                <div class="car-gallery-grid" id="carGalleryGrid">
+                    <div class="loading-placeholder">Carregando fotos...</div>
+                </div>
             </div>
         </div>
     </div>
