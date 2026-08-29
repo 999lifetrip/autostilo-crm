@@ -118,56 +118,119 @@
 
                 <!-- ── DASHBOARD PAGE ── -->
                 <div class="page active" id="pageDashboard">
-                    <div class="page-header">
+                    <div class="page-header dashboard-top-header">
                         <div>
+                            <div class="dash-badge-live">
+                                <span class="live-dot-pulse"></span>
+                                <span>CENTRAL OPERACIONAL AUTOSTILOCAR</span>
+                            </div>
                             <h2>Visão Geral da Loja</h2>
-                            <span class="page-subtitle" id="dashDate"></span>
+                            <span class="page-subtitle" id="dashDate">Carregando data...</span>
+                        </div>
+                        <div class="dash-quick-actions">
+                            <button class="btn btn-secondary" onclick="navigate('veiculos')">🚗 Ver Estoque</button>
+                            <button class="btn btn-primary" onclick="navigate('leads')">💬 Abrir WhatsApp</button>
                         </div>
                     </div>
 
+                    <!-- ── 4 KPI CARDS ULTRA-PREMIUM ── -->
                     <div class="stats-grid" id="statsGrid">
-                        <div class="stat-card stat-green">
-                            <div class="stat-icon">🏎️</div>
+                        <div class="stat-card stat-premium stat-green">
+                            <div class="stat-icon-wrap">
+                                <span class="stat-icon">🏎️</span>
+                            </div>
                             <div class="stat-info">
+                                <div class="stat-header-row">
+                                    <span class="stat-label">Total de Leads</span>
+                                    <span class="stat-chip stat-chip-green">👥 Base Ativa</span>
+                                </div>
                                 <div class="stat-value" id="statTotalLeads">—</div>
-                                <div class="stat-label">Total de Leads</div>
+                                <span class="stat-subtext">Clientes capturados no WhatsApp</span>
                             </div>
                         </div>
-                        <div class="stat-card stat-green">
-                            <div class="stat-icon">🤖</div>
+
+                        <div class="stat-card stat-premium stat-emerald">
+                            <div class="stat-icon-wrap">
+                                <span class="stat-icon">🤖</span>
+                            </div>
                             <div class="stat-info">
+                                <div class="stat-header-row">
+                                    <span class="stat-label">Iago em Atendimento</span>
+                                    <span class="stat-chip stat-chip-emerald">⚡ 100% Automático</span>
+                                </div>
                                 <div class="stat-value" id="statIaAtiva">—</div>
-                                <div class="stat-label">IA Atendendo</div>
+                                <span class="stat-subtext">Triando e simulando crédito</span>
                             </div>
                         </div>
-                        <div class="stat-card stat-orange">
-                            <div class="stat-icon">👤</div>
+
+                        <div class="stat-card stat-premium stat-orange">
+                            <div class="stat-icon-wrap">
+                                <span class="stat-icon">👤</span>
+                            </div>
                             <div class="stat-info">
+                                <div class="stat-header-row">
+                                    <span class="stat-label">Com Vendedor Humano</span>
+                                    <span class="stat-chip stat-chip-orange">✋ IA Pausada</span>
+                                </div>
                                 <div class="stat-value" id="statIaOff">—</div>
-                                <div class="stat-label">Com Vendedor Humano</div>
+                                <span class="stat-subtext">Atendimentos manuais na loja</span>
                             </div>
                         </div>
-                        <div class="stat-card stat-red">
-                            <div class="stat-icon">🔔</div>
+
+                        <div class="stat-card stat-premium stat-red">
+                            <div class="stat-icon-wrap">
+                                <span class="stat-icon">🔔</span>
+                            </div>
                             <div class="stat-info">
+                                <div class="stat-header-row">
+                                    <span class="stat-label">Escalados Hoje</span>
+                                    <span class="stat-chip stat-chip-red">🔥 Prontos p/ Fechar</span>
+                                </div>
                                 <div class="stat-value" id="statEscaladosHoje">—</div>
-                                <div class="stat-label">Escalados Hoje</div>
+                                <span class="stat-subtext">Ficha completa / Troca / À vista</span>
                             </div>
                         </div>
                     </div>
 
+                    <!-- ── DESTAQUE MÁXIMO: CLIENTES PEDINDO VENDEDOR HUMANO (URGENTE) ── -->
+                    <div class="card card-escalados-hero">
+                        <div class="card-header card-header-urgent">
+                            <div class="urgent-header-left">
+                                <span class="urgent-pulse-icon">🚨</span>
+                                <div>
+                                    <h3>Clientes Pedindo Vendedor Humano (Urgente)</h3>
+                                    <span class="urgent-subtitle">Triagens concluídas, propostas de troca ou clientes aguardando consultor</span>
+                                </div>
+                            </div>
+                            <span class="badge-urgent-counter" id="badgeEscaladosCount">0 aguardando</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="escaladosList" class="escalados-list">
+                                <div class="empty-state">Sem clientes aguardando atendimento humano no momento 🎉</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── GRÁFICOS E METRICAS (2 COLUNAS) ── -->
                     <div class="dashboard-grid">
                         <div class="card">
                             <div class="card-header">
-                                <h3>🏷️ Leads por Etiqueta / Funil</h3>
+                                <div>
+                                    <h3>🏷️ Funil de Vendas & Triagem</h3>
+                                    <span class="card-subtitle">Distribuição dos contatos por etapa no WhatsApp</span>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div id="etiquetasChart" class="etiquetas-chart"></div>
                             </div>
                         </div>
+
                         <div class="card">
                             <div class="card-header">
-                                <h3>📈 Movimento dos Últimos 7 Dias</h3>
+                                <div>
+                                    <h3>📈 Movimento dos Últimos 7 Dias</h3>
+                                    <span class="card-subtitle">Volume de mensagens e novos contatos</span>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div id="atividadeChart" class="atividade-chart"></div>
@@ -175,16 +238,22 @@
                         </div>
                     </div>
 
+                    <!-- ── LIVE FEED DE ATIVIDADE DO WHATSAPP ── -->
                     <div class="card">
                         <div class="card-header">
-                            <h3>🔔 Clientes Pedindo Vendedor Humano (Urgente)</h3>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="live-dot-pulse"></span>
+                                <h3>⚡ Últimas Conversas no WhatsApp (Tempo Real)</h3>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="navigate('leads')">Ver Todos os Leads →</button>
                         </div>
                         <div class="card-body">
-                            <div id="escaladosList" class="escalados-list">
-                                <div class="empty-state">Sem clientes aguardando atendimento humano</div>
+                            <div id="liveActivityList" class="live-activity-list">
+                                <div class="loading-placeholder">Carregando atividade recente...</div>
                             </div>
                         </div>
                     </div>
+
                 </div>
 
                 <!-- ── LEADS PAGE ── -->
