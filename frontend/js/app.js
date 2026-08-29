@@ -616,7 +616,7 @@ function renderVeiculosGrid(veiculos) {
                         </div>
                     `}
                     <span class="badge-photo-count">📸 ${v.total_fotos || 0} fotos</span>
-                    ${v.destaque ? `<span class="badge-card-destaque">⭐ Destaque</span>` : ''}
+                    ${v.destaque ? `<span class="badge-card-destaque">📢 ANÚNCIO (DESTAQUE)</span>` : `<span class="badge-card-estoque">🚗 ESTOQUE LOJA</span>`}
                 </div>
                 <div class="veiculo-info">
                     <div class="veiculo-header">
