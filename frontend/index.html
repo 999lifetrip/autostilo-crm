@@ -248,10 +248,10 @@
                 <div class="page" id="pageVeiculos">
                     <div class="page-header">
                         <div>
-                            <h2>Estoque de Veículos</h2>
-                            <span class="page-subtitle">Cadastre carros e fotos diretamente no CRM para o Iago enviar aos clientes</span>
+                            <h2>Estoque & Carros do Anúncio</h2>
+                            <span class="page-subtitle">Cadastre carros e fotos diretamente no CRM para o Iago enviar aos clientes (Fotos do anúncio ou fotos do estoque completo)</span>
                         </div>
-                        <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Novo Veículo</button>
+                        <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Cadastrar Carro</button>
                     </div>
 
                     <div class="filters-bar">
@@ -262,9 +262,9 @@
                         <div class="filter-group">
                             <span class="filter-label">Filtrar:</span>
                             <div class="filter-chips">
-                                <button class="filter-chip active" data-filter-veiculo="destaque" data-value="">Todos</button>
-                                <button class="filter-chip" data-filter-veiculo="destaque" data-value="true">⭐ Destaques (Anúncio)</button>
-                                <button class="filter-chip" data-filter-veiculo="ativo" data-value="true">🟢 Ativos no WhatsApp</button>
+                                <button class="filter-chip active" data-filter-veiculo="destaque" data-value="">Todos os Carros</button>
+                                <button class="filter-chip" data-filter-veiculo="destaque" data-value="true">📢 Carros do Anúncio</button>
+                                <button class="filter-chip" data-filter-veiculo="ativo" data-value="true">🟢 Liberados para IA</button>
                             </div>
                         </div>
                     </div>
@@ -459,11 +459,11 @@
                     <div class="form-row-2" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 15px;">
                         <label class="checkbox-label">
                             <input type="checkbox" id="veiculoDestaque">
-                            <span>⭐ Carro em Destaque (Carro do Anúncio)</span>
+                            <span>📢 Carro do Anúncio (Enviado quando o cliente perguntar do anúncio)</span>
                         </label>
                         <label class="checkbox-label">
                             <input type="checkbox" id="veiculoAtivo" checked>
-                            <span>🟢 Ativo (Liberado para IA enviar fotos)</span>
+                            <span>🟢 Ativo no Estoque (Liberado para IA enviar)</span>
                         </label>
                     </div>
 
