@@ -1301,6 +1301,158 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
 @media (max-width: 768px) {
     .form-row-3, .form-row-2 { grid-template-columns: 1fr; }
     .veiculos-grid { grid-template-columns: 1fr; }
+    .ia-editor-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ─── IA PROMPT EDITOR STYLES ───────────────────────────────── */
+.ia-editor-grid {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 1.25rem;
+    align-items: stretch;
+}
+
+.badge-version-pill {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--brand-accent);
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.token-count-pill {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.prompt-code-editor {
+    width: 100%;
+    min-height: 520px;
+    flex: 1;
+    background: #050d09;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: #e2e8f0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    padding: 1rem;
+    resize: vertical;
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.prompt-code-editor:focus {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.2);
+}
+
+.prompt-editor-footer {
+    margin-top: 0.6rem;
+}
+
+.prompt-hint {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.ia-ai-card {
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(9, 26, 17, 0.95) 100%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.ia-ai-desc {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 0.8rem;
+}
+
+.ia-refinar-result {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    animation: fadeIn 0.3s ease;
+}
+
+.ia-refinar-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--brand-accent);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.ia-refinar-resumo {
+    font-size: 0.82rem;
+    color: #e2e8f0;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.7rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.8rem;
+}
+
+.ia-refinar-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
+.sugestoes-chips-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.btn-sugestao-chip {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    padding: 0.65rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+}
+
+.btn-sugestao-chip:hover {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: var(--brand-accent);
+    transform: translateX(4px);
+}
+
+.spinner-small {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-left: 6px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 
