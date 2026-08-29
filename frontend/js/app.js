@@ -403,13 +403,13 @@ window.openLead = async (telEncoded) => {
     try {
         const data = await api(`/leads/${telEncoded}`);
         currentLeadData = data.lead;
-        renderLeadModal(data.lead, data.historico);
+        renderLeadModal(data.lead, data.historico, data.audios || []);
     } catch (e) {
         toast('Erro ao carregar lead: ' + e.message, 'error');
     }
 };
 
-function renderLeadModal(lead, historico) {
+function renderLeadModal(lead, historico, audios = []) {
     document.getElementById('modalLeadNome').textContent = lead.nome || '(sem nome)';
     document.getElementById('modalLeadTelefone').textContent = formatTel(lead.telefone);
     document.getElementById('modalAvatar').textContent = initials(lead.nome || lead.telefone);
@@ -435,7 +435,7 @@ function renderLeadModal(lead, historico) {
 
     document.getElementById('anotacoesInput').value = lead.anotacoes || '';
 
-    renderChat(historico);
+    renderChat(historico, audios);
 }
 
 function updateIaLabel(isOn) {
@@ -455,12 +455,18 @@ function escapeHtml(str) {
         .replace(/\n/g, '<br>');
 }
 
-function renderChat(historico) {
+function renderChat(historico, audios = []) {
     const view = document.getElementById('chatView');
-    if (!historico || !historico.length) {
+    if ((!historico || !historico.length) && (!audios || !audios.length)) {
         view.innerHTML = '<div class="chat-loading">Sem histórico registrado</div>';
         return;
     }
+
+    const audioMap = new Map();
+    (audios || []).forEach(a => {
+        if (a.id_mensagem) audioMap.set(a.id_mensagem, a);
+    });
+
     const html = historico.slice().reverse().map(row => {
         let msgObj = row.message;
         if (typeof msgObj === 'string') {
@@ -481,15 +487,39 @@ function renderChat(historico) {
             return '';
         }
 
+        const audioItem = audioMap.get(row.id_mensagem) || audioMap.get(row.id) || (msgObj.base64 ? { base64: msgObj.base64 } : null);
         const time = row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
         return `<div class="chat-bubble ${isHuman ? 'user' : 'bot'}">
             <div class="chat-bubble-sender">${isHuman ? '👤 Cliente' : '🤖 Iago (IA)'}</div>
+            ${audioItem ? `
+                <div class="chat-audio-player-wrap">
+                    <div class="chat-audio-pill">🎙️ Áudio recebido</div>
+                    <audio controls class="chat-audio-el" src="data:audio/ogg;base64,${audioItem.base64}"></audio>
+                </div>
+            ` : ''}
             <div class="chat-bubble-text">${escapeHtml(text)}</div>
             ${time ? `<div class="chat-time">${time}</div>` : ''}
         </div>`;
     }).filter(Boolean).join('');
 
-    view.innerHTML = html || '<div class="chat-loading">Sem mensagens para exibir</div>';
+    let audiosExtraHtml = '';
+    const unmatchedAudios = (audios || []).filter(a => !audioMap.has(a.id_mensagem));
+    if (unmatchedAudios.length > 0 && !html.includes('chat-audio-player-wrap')) {
+        audiosExtraHtml = unmatchedAudios.map(a => `
+            <div class="chat-bubble user">
+                <div class="chat-bubble-sender">👤 Cliente (Áudio de Voz)</div>
+                <div class="chat-audio-player-wrap">
+                    <div class="chat-audio-pill">🎙️ Áudio gravado</div>
+                    <audio controls class="chat-audio-el" src="data:audio/ogg;base64,${a.base64}"></audio>
+                </div>
+                ${a.transcricao ? `<div class="chat-bubble-text" style="font-size:0.8rem; color:var(--text-secondary)"><em>Transcrição:</em> "${escapeHtml(a.transcricao)}"</div>` : ''}
+                <div class="chat-time">${a.criado_em ? new Date(a.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+            </div>
+        `).join('');
+    }
+
+    view.innerHTML = (html + audiosExtraHtml) || '<div class="chat-loading">Sem mensagens para exibir</div>';
     view.scrollTop = view.scrollHeight;
 }
 
