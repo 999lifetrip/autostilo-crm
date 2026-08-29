@@ -7,8 +7,11 @@ let token = localStorage.getItem('crm_token');
 let currentUser = null;
 let currentLeadData = null;
 let leadsState = { pagina: 1, busca: '', ia_ativa: '', etiqueta: 'todos' };
+let veiculosState = { busca: '', destaque: '', ativo: '' };
 let usuarios = [];
 let refreshInterval = null;
+let pendingPhotos = []; // para o modal de cadastro/edição de veículos
+let activeGalleryVehicleId = null;
 
 // ─── Helpers ──────────────────────────────────────────────────
 function api(endpoint, options = {}) {
@@ -44,6 +47,11 @@ function formatTel(tel) {
     return tel;
 }
 
+function formatMoeda(val) {
+    if (val === null || val === undefined || val === '') return 'R$ 0,00';
+    return Number(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 function timeAgo(dateStr) {
     if (!dateStr) return '';
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -67,10 +75,12 @@ const ETIQUETAS = {
     fechou: { emoji: '✅', label: 'Fechou', cls: 'badge-fechou' },
     perdeu: { emoji: '❌', label: 'Perdeu', cls: 'badge-perdeu' },
     aguardando: { emoji: '🕐', label: 'Aguardando', cls: 'badge-aguardando' },
+    com_vendedor: { emoji: '👤', label: 'Com Vendedor', cls: 'badge-perdeu' },
+    em_atendimento: { emoji: '💬', label: 'Em Atendimento', cls: 'badge-quente' },
 };
 
 function badgeEtiqueta(e) {
-    const t = ETIQUETAS[e] || { emoji: '', label: e || 'novo', cls: 'badge-novo' };
+    const t = ETIQUETAS[e] || { emoji: '🏷️', label: e || 'novo', cls: 'badge-novo' };
     return `<span class="badge ${t.cls}">${t.emoji} ${t.label}</span>`;
 }
 
@@ -88,7 +98,6 @@ function startClock() {
 async function checkAuth() {
     if (!token) { showLogin(); return; }
     try {
-        // Decode token
         const payload = JSON.parse(atob(token.split('.')[1]));
         if (payload.exp * 1000 < Date.now()) { logout(); return; }
         currentUser = payload;
@@ -105,7 +114,6 @@ function showApp() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
 
-    // Update user info
     document.getElementById('userName').textContent = currentUser.nome;
     document.getElementById('userRole').textContent = currentUser.role;
     document.getElementById('userAvatar').textContent = initials(currentUser.nome);
@@ -113,6 +121,7 @@ function showApp() {
     startClock();
     loadDashboard();
     loadLeads();
+    loadVeiculos();
     loadUsuarios();
     startAutoRefresh();
 }
@@ -156,9 +165,10 @@ document.getElementById('btnLogout').addEventListener('click', logout);
 
 // ─── Navigation ────────────────────────────────────────────────
 const pages = {
-    dashboard: { page: 'pageDashboard', title: 'Dashboard' },
-    leads: { page: 'pageLeads', title: 'Leads' },
-    equipe: { page: 'pageEquipe', title: 'Equipe' },
+    dashboard: { page: 'pageDashboard', title: 'Dashboard Geral' },
+    leads: { page: 'pageLeads', title: 'Gestão de Leads WhatsApp' },
+    veiculos: { page: 'pageVeiculos', title: 'Estoque de Veículos & Fotos' },
+    equipe: { page: 'pageEquipe', title: 'Equipe de Vendas' },
 };
 
 function navigate(key) {
@@ -174,8 +184,11 @@ function navigate(key) {
         }
     });
     document.getElementById('headerTitle').textContent = pages[key].title;
-    // Close sidebar on mobile
     document.getElementById('sidebar').classList.remove('open');
+
+    if (key === 'veiculos') loadVeiculos();
+    if (key === 'leads') loadLeads();
+    if (key === 'dashboard') loadDashboard();
 }
 
 document.querySelectorAll('.nav-item').forEach(btn => {
@@ -191,46 +204,32 @@ async function loadDashboard() {
     try {
         const data = await api('/dashboard');
 
-        // Update date
         document.getElementById('dashDate').textContent =
             new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-        // Stats
         document.getElementById('statTotalLeads').textContent = data.total_leads ?? 0;
         document.getElementById('statIaAtiva').textContent = data.ia_ativa ?? 0;
         document.getElementById('statIaOff').textContent = data.ia_off ?? 0;
         document.getElementById('statEscaladosHoje').textContent = data.escalados_hoje ?? 0;
-        document.getElementById('badgeLeads').textContent = data.ativos_hoje ?? 0;
+        document.getElementById('badgeLeads').textContent = data.total_leads ?? 0;
 
-        // Etiquetas chart
         renderEtiquetasChart(data.etiquetas || []);
-
-        // Atividade chart
         renderAtividadeChart(data.atividade || []);
-
-        // Escalados recentes — load separately from leads filtered
         loadEscaladosRecentes();
-
-    } catch (e) {
-        console.error('Dashboard error:', e);
-    }
+    } catch {}
 }
 
 function renderEtiquetasChart(etiquetas) {
     const el = document.getElementById('etiquetasChart');
-    if (!etiquetas.length) { el.innerHTML = '<div class="empty-state">Sem dados ainda</div>'; return; }
-    const max = Math.max(...etiquetas.map(e => parseInt(e.total)));
+    if (!etiquetas.length) { el.innerHTML = '<div class="empty-state">Sem dados de funil ainda</div>'; return; }
+    const total = etiquetas.reduce((s, e) => s + parseInt(e.total), 0);
     el.innerHTML = etiquetas.map(e => {
-        const pct = max > 0 ? Math.round((parseInt(e.total) / max) * 100) : 0;
-        const info = ETIQUETAS[e.etiqueta] || { emoji: '', label: e.etiqueta };
-        return `<div class="etiqueta-bar">
-            <div class="etiqueta-bar-label">
-                <span>${info.emoji} ${info.label}</span>
-                <span>${e.total}</span>
-            </div>
-            <div class="etiqueta-bar-track">
-                <div class="etiqueta-bar-fill" style="width:${pct}%"></div>
-            </div>
+        const pct = total > 0 ? Math.round((parseInt(e.total) / total) * 100) : 0;
+        const info = ETIQUETAS[e.etiqueta] || { emoji: '🏷️', label: e.etiqueta };
+        return `<div class="chart-row">
+            <div class="chart-label">${info.emoji} ${info.label}</div>
+            <div class="chart-bar-bg"><div class="chart-bar-fill" style="width:${pct}%"></div></div>
+            <div class="chart-val">${e.total} (${pct}%)</div>
         </div>`;
     }).join('');
 }
@@ -314,15 +313,36 @@ function renderLeadsTable(leads) {
             <td>${badgeEtiqueta(l.etiqueta)}</td>
             <td style="color:var(--text-secondary);font-size:0.82rem">${l.vendedor_nome || '—'}</td>
             <td>
-                <span class="ia-badge ${l.ia_ativa ? 'ia-on' : 'ia-off'}">
-                    ${l.ia_ativa ? '🤖 IA Ativa' : '👤 Humano'}
-                </span>
+                <button class="ia-toggle-btn ${l.ia_ativa ? 'ia-on' : 'ia-off'}" 
+                        onclick="event.stopPropagation(); toggleIaStatus('${encodeURIComponent(l.telefone)}', ${l.ia_ativa})" 
+                        title="Clique para alternar entre IA Ativa e Atendimento Humano">
+                    <span class="ia-toggle-icon">${l.ia_ativa ? '🤖' : '👤'}</span>
+                    <span class="ia-toggle-text">${l.ia_ativa ? 'IA Ativa' : 'Humano'}</span>
+                    <span class="ia-toggle-switch"></span>
+                </button>
             </td>
             <td style="color:var(--text-secondary);font-size:0.8rem">${timeAgo(l.ultima_interacao)}</td>
             <td><button class="btn-detail" onclick="event.stopPropagation();openLead('${encodeURIComponent(l.telefone)}')">Ver →</button></td>
         </tr>
     `).join('');
 }
+
+// ─── TOGGLE IA RÁPIDO ON/OFF ───────────────────────────────────
+window.toggleIaStatus = async (telEncoded, currentStatus) => {
+    const tel = decodeURIComponent(telEncoded);
+    try {
+        const data = await api(`/leads/${telEncoded}/toggle-ia`, { method: 'POST' });
+        if (data.ia_ativa) {
+            toast(`🤖 IA ATIVADA para ${formatTel(tel)}! O robô voltará a responder.`);
+        } else {
+            toast(`👤 IA DESATIVADA para ${formatTel(tel)} (Atendimento Humano assumiu).`);
+        }
+        loadLeads();
+        loadDashboard();
+    } catch (e) {
+        toast('Erro ao alterar status da IA: ' + e.message, 'error');
+    }
+};
 
 function renderPagination(total, atual) {
     const el = document.getElementById('pagination');
@@ -341,7 +361,7 @@ function renderPagination(total, atual) {
 
 window.goPage = (p) => { leadsState.pagina = p; loadLeads(); };
 
-// Search
+// Search Leads
 let searchTimeout;
 document.getElementById('searchInput').addEventListener('input', e => {
     clearTimeout(searchTimeout);
@@ -352,13 +372,12 @@ document.getElementById('searchInput').addEventListener('input', e => {
     }, 350);
 });
 
-// Filters
-document.querySelectorAll('.filter-chip').forEach(chip => {
+// Filters Leads
+document.querySelectorAll('.filter-chips .filter-chip[data-filter="ia_ativa"]').forEach(chip => {
     chip.addEventListener('click', () => {
-        const filter = chip.dataset.filter;
-        document.querySelectorAll(`.filter-chip[data-filter="${filter}"]`).forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.filter-chips .filter-chip[data-filter="ia_ativa"]').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
-        leadsState[filter] = chip.dataset.value;
+        leadsState.ia_ativa = chip.dataset.value;
         leadsState.pagina = 1;
         loadLeads();
     });
@@ -376,7 +395,6 @@ window.openLead = async (telEncoded) => {
     const modal = document.getElementById('modalLead');
     modal.classList.remove('hidden');
 
-    // Reset
     document.getElementById('chatView').innerHTML = '<div class="chat-loading">Carregando conversa...</div>';
     document.getElementById('modalLeadNome').textContent = '...';
     document.getElementById('modalLeadTelefone').textContent = tel;
@@ -396,12 +414,10 @@ function renderLeadModal(lead, historico) {
     document.getElementById('modalLeadTelefone').textContent = formatTel(lead.telefone);
     document.getElementById('modalAvatar').textContent = initials(lead.nome || lead.telefone);
 
-    // IA toggle
     const iaToggle = document.getElementById('iaToggle');
     iaToggle.checked = lead.ia_ativa;
     updateIaLabel(lead.ia_ativa);
 
-    // Etiquetas
     const etiquetaGrid = document.getElementById('etiquetaGrid');
     etiquetaGrid.innerHTML = Object.entries(ETIQUETAS).map(([k, v]) =>
         `<button class="etiqueta-btn ${lead.etiqueta === k ? 'active-etiqueta' : ''}" data-etiqueta="${k}">${v.emoji} ${v.label}</button>`
@@ -413,15 +429,12 @@ function renderLeadModal(lead, historico) {
         });
     });
 
-    // Vendedor select
     const sel = document.getElementById('vendedorSelect');
     sel.innerHTML = `<option value="">— Sem vendedor —</option>` +
         usuarios.map(u => `<option value="${u.id}" ${lead.vendedor_id === u.id ? 'selected' : ''}>${u.nome}</option>`).join('');
 
-    // Anotações
     document.getElementById('anotacoesInput').value = lead.anotacoes || '';
 
-    // Histórico do chat
     renderChat(historico);
 }
 
@@ -439,7 +452,6 @@ function renderChat(historico) {
         view.innerHTML = '<div class="chat-loading">Sem histórico registrado</div>';
         return;
     }
-    // historico is from n8n_historico_mensagens — field names may vary
     view.innerHTML = historico.slice().reverse().map(msg => {
         const isHuman = msg.type === 'human' || msg.role === 'human' || msg.type === 'incoming';
         const content = msg.data?.content || msg.content || msg.message || '…';
@@ -487,13 +499,384 @@ document.getElementById('btnEnviarMsg').addEventListener('click', async () => {
     } catch (e) { toast(e.message, 'error'); }
 });
 
-// Close modal
+// Close modal lead
 document.getElementById('modalLeadClose').addEventListener('click', () => {
     document.getElementById('modalLead').classList.add('hidden');
 });
 document.getElementById('modalLead').addEventListener('click', e => {
     if (e.target === document.getElementById('modalLead'))
         document.getElementById('modalLead').classList.add('hidden');
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ─── ESTOQUE DE VEÍCULOS & GESTÃO DE FOTOS ────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function loadVeiculos() {
+    const grid = document.getElementById('veiculosGrid');
+    grid.innerHTML = `<div class="loading-placeholder"><div class="spinner"></div> Carregando estoque de veículos...</div>`;
+    try {
+        const params = new URLSearchParams();
+        if (veiculosState.busca) params.set('busca', veiculosState.busca);
+        if (veiculosState.destaque !== '') params.set('destaque', veiculosState.destaque);
+        if (veiculosState.ativo !== '') params.set('ativo', veiculosState.ativo);
+
+        const veiculos = await api(`/veiculos?${params}`);
+        document.getElementById('badgeVeiculos').textContent = veiculos.length;
+        renderVeiculosGrid(veiculos);
+    } catch (e) {
+        grid.innerHTML = `<div class="loading-placeholder" style="color:var(--red)">❌ Erro ao carregar veículos: ${e.message}</div>`;
+    }
+}
+
+function renderVeiculosGrid(veiculos) {
+    const grid = document.getElementById('veiculosGrid');
+    if (!veiculos.length) {
+        grid.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1; padding: 3rem; text-align:center;">
+                <div style="font-size:3rem; margin-bottom:0.75rem;">🚗</div>
+                <div style="font-size:1.1rem; font-weight:700; color:#fff;">Nenhum veículo encontrado</div>
+                <p style="color:var(--text-secondary); margin: 0.5rem 0 1.5rem;">Cadastre novos carros com fotos para o Iago consultar e enviar aos clientes.</p>
+                <button class="btn btn-primary" onclick="openModalVeiculo()">+ Cadastrar Primeiro Carro</button>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = veiculos.map(v => {
+        const capaSrc = v.foto_capa ? `data:image/jpeg;base64,${v.foto_capa}` : '';
+        return `
+            <div class="veiculo-card ${v.destaque ? 'is-destaque' : ''}">
+                <div class="veiculo-thumb-wrap">
+                    ${capaSrc ? `
+                        <img src="${capaSrc}" alt="${v.modelo}" class="veiculo-thumb" loading="lazy">
+                    ` : `
+                        <div class="veiculo-thumb-empty">
+                            <span>🚗</span>
+                            <span>Sem foto de capa</span>
+                        </div>
+                    `}
+                    <span class="badge-photo-count">📸 ${v.total_fotos || 0} fotos</span>
+                    ${v.destaque ? `<span class="badge-card-destaque">⭐ Destaque</span>` : ''}
+                </div>
+                <div class="veiculo-info">
+                    <div class="veiculo-header">
+                        <div>
+                            <div class="veiculo-title">${v.modelo}</div>
+                            <div class="veiculo-marca-ano">${v.marca || 'AutoStilo'} • ${v.ano || '—'}</div>
+                        </div>
+                        <div class="veiculo-preco">${formatMoeda(v.preco)}</div>
+                    </div>
+
+                    <div class="veiculo-tags">
+                        ${v.cambio ? `<span class="v-tag">🕹️ ${v.cambio}</span>` : ''}
+                        ${v.km ? `<span class="v-tag">🛣️ ${Number(v.km).toLocaleString('pt-BR')} km</span>` : ''}
+                        ${v.combustivel ? `<span class="v-tag">⛽ ${v.combustivel}</span>` : ''}
+                        ${v.cor ? `<span class="v-tag">🎨 ${v.cor}</span>` : ''}
+                    </div>
+
+                    ${v.diferenciais ? `
+                        <div class="veiculo-diferenciais-preview" title="${v.diferenciais}">
+                            ✨ ${v.diferenciais}
+                        </div>
+                    ` : ''}
+
+                    <div class="veiculo-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="openGalleryModal(${v.id}, '${encodeURIComponent(v.modelo)}', '${encodeURIComponent(v.ano || '')}')">
+                            📸 Fotos (${v.total_fotos || 0})
+                        </button>
+                        <button class="btn btn-ghost btn-sm" onclick="openModalVeiculo(${v.id})" title="Editar veículo">
+                            ✏️
+                        </button>
+                        <button class="btn btn-ghost btn-sm" style="color:#f87171" onclick="excluirVeiculo(${v.id}, '${encodeURIComponent(v.modelo)}')" title="Excluir veículo">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Search & Filters Veículos
+let searchVeiculosTimeout;
+document.getElementById('searchVeiculos').addEventListener('input', e => {
+    clearTimeout(searchVeiculosTimeout);
+    searchVeiculosTimeout = setTimeout(() => {
+        veiculosState.busca = e.target.value;
+        loadVeiculos();
+    }, 350);
+});
+
+document.querySelectorAll('[data-filter-veiculo]').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const filter = chip.dataset.filterVeiculo;
+        document.querySelectorAll('[data-filter-veiculo]').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        if (filter === 'destaque') {
+            veiculosState.destaque = chip.dataset.value;
+            veiculosState.ativo = '';
+        } else if (filter === 'ativo') {
+            veiculosState.ativo = chip.dataset.value;
+            veiculosState.destaque = '';
+        } else {
+            veiculosState.destaque = '';
+            veiculosState.ativo = '';
+        }
+        loadVeiculos();
+    });
+});
+
+// ─── Modal Novo / Editar Veículo ───────────────────────────────
+document.getElementById('btnNovoVeiculo').addEventListener('click', () => openModalVeiculo());
+
+window.openModalVeiculo = async (id = null) => {
+    const modal = document.getElementById('modalVeiculo');
+    const form = document.getElementById('formVeiculo');
+    form.reset();
+    pendingPhotos = [];
+    renderPhotosPreview();
+
+    if (id) {
+        document.getElementById('modalVeiculoTitle').textContent = '✏️ Editar Veículo';
+        try {
+            const data = await api(`/veiculos/${id}`);
+            const v = data.veiculo;
+            document.getElementById('veiculoId').value = v.id;
+            document.getElementById('veiculoModelo').value = v.modelo || '';
+            document.getElementById('veiculoMarca').value = v.marca || '';
+            document.getElementById('veiculoAno').value = v.ano || '';
+            document.getElementById('veiculoPreco').value = v.preco || '';
+            document.getElementById('veiculoCor').value = v.cor || '';
+            document.getElementById('veiculoCambio').value = v.cambio || 'Manual';
+            document.getElementById('veiculoKm').value = v.km || '';
+            document.getElementById('veiculoCombustivel').value = v.combustivel || 'Flex';
+            document.getElementById('veiculoOpcionais').value = v.opcionais || '';
+            document.getElementById('veiculoDiferenciais').value = v.diferenciais || '';
+            document.getElementById('veiculoDescricao').value = v.descricao || '';
+            document.getElementById('veiculoDestaque').checked = Boolean(v.destaque);
+            document.getElementById('veiculoAtivo').checked = Boolean(v.ativo);
+        } catch (e) {
+            toast('Erro ao carregar dados do carro: ' + e.message, 'error');
+            return;
+        }
+    } else {
+        document.getElementById('modalVeiculoTitle').textContent = '🚗 Cadastrar Novo Veículo';
+        document.getElementById('veiculoId').value = '';
+        document.getElementById('veiculoAtivo').checked = true;
+    }
+
+    modal.classList.remove('hidden');
+};
+
+document.getElementById('modalVeiculoClose').addEventListener('click', () => {
+    document.getElementById('modalVeiculo').classList.add('hidden');
+});
+document.getElementById('btnCancelarVeiculo').addEventListener('click', () => {
+    document.getElementById('modalVeiculo').classList.add('hidden');
+});
+
+// Photo upload handlers (Drag & Drop + File selector)
+const photoDropzone = document.getElementById('photoDropzone');
+const photoInput = document.getElementById('photoInput');
+
+photoDropzone.addEventListener('dragover', e => {
+    e.preventDefault();
+    photoDropzone.classList.add('dragover');
+});
+photoDropzone.addEventListener('dragleave', () => photoDropzone.classList.remove('dragover'));
+photoDropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    photoDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files) handlePhotoFiles(e.dataTransfer.files);
+});
+photoInput.addEventListener('change', e => {
+    if (e.target.files) handlePhotoFiles(e.target.files);
+});
+
+function handlePhotoFiles(files) {
+    Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            pendingPhotos.push({
+                nome: file.name,
+                mimetype: file.type,
+                base64: reader.result,
+            });
+            renderPhotosPreview();
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function renderPhotosPreview() {
+    const grid = document.getElementById('photosPreviewGrid');
+    grid.innerHTML = pendingPhotos.map((p, idx) => `
+        <div class="preview-thumb-card">
+            <img src="${p.base64}" class="preview-thumb-img" alt="Foto ${idx+1}">
+            <button type="button" class="preview-thumb-delete" onclick="removePendingPhoto(${idx})" title="Remover">✕</button>
+        </div>
+    `).join('');
+}
+
+window.removePendingPhoto = (idx) => {
+    pendingPhotos.splice(idx, 1);
+    renderPhotosPreview();
+};
+
+// Submeter Formulário de Veículo
+document.getElementById('formVeiculo').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('btnSalvarVeiculo');
+    const originalText = btn.textContent;
+    btn.textContent = 'Salvando...';
+    btn.disabled = true;
+
+    const id = document.getElementById('veiculoId').value;
+    const payload = {
+        modelo: document.getElementById('veiculoModelo').value.trim(),
+        marca: document.getElementById('veiculoMarca').value.trim(),
+        ano: document.getElementById('veiculoAno').value.trim(),
+        preco: parseFloat(document.getElementById('veiculoPreco').value) || 0,
+        cor: document.getElementById('veiculoCor').value.trim(),
+        cambio: document.getElementById('veiculoCambio').value,
+        km: parseInt(document.getElementById('veiculoKm').value) || 0,
+        combustivel: document.getElementById('veiculoCombustivel').value.trim(),
+        opcionais: document.getElementById('veiculoOpcionais').value.trim(),
+        diferenciais: document.getElementById('veiculoDiferenciais').value.trim(),
+        descricao: document.getElementById('veiculoDescricao').value.trim(),
+        destaque: document.getElementById('veiculoDestaque').checked,
+        ativo: document.getElementById('veiculoAtivo').checked,
+    };
+
+    try {
+        if (id) {
+            payload.novas_fotos = pendingPhotos;
+            await api(`/veiculos/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+            toast('Veículo atualizado com sucesso!');
+        } else {
+            payload.fotos = pendingPhotos;
+            await api('/veiculos', { method: 'POST', body: JSON.stringify(payload) });
+            toast('Novo veículo cadastrado com sucesso!');
+        }
+        document.getElementById('modalVeiculo').classList.add('hidden');
+        loadVeiculos();
+    } catch (err) {
+        toast('Erro ao salvar veículo: ' + err.message, 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+});
+
+// Excluir Veículo
+window.excluirVeiculo = async (id, modeloEncoded) => {
+    const modelo = decodeURIComponent(modeloEncoded);
+    if (!confirm(`Tem certeza que deseja excluir o ${modelo}? Todas as fotos serão removidas.`)) return;
+    try {
+        await api(`/veiculos/${id}`, { method: 'DELETE' });
+        toast(`Veículo ${modelo} excluído.`);
+        loadVeiculos();
+    } catch (e) {
+        toast('Erro ao excluir: ' + e.message, 'error');
+    }
+};
+
+// ─── Modal Galeria de Fotos ────────────────────────────────────
+window.openGalleryModal = async (veiculoId, modeloEncoded, anoEncoded) => {
+    activeGalleryVehicleId = veiculoId;
+    const modelo = decodeURIComponent(modeloEncoded);
+    const ano = decodeURIComponent(anoEncoded);
+
+    document.getElementById('galleryCarTitle').textContent = `Fotos do ${modelo} ${ano}`;
+    document.getElementById('galleryCarSub').textContent = `Gerencie as fotos que a IA envia aos clientes`;
+    document.getElementById('carGalleryGrid').innerHTML = '<div class="loading-placeholder"><div class="spinner"></div> Carregando fotos...</div>';
+    document.getElementById('modalFotosVeiculo').classList.remove('hidden');
+
+    loadGalleryPhotos(veiculoId);
+};
+
+async function loadGalleryPhotos(veiculoId) {
+    try {
+        const data = await api(`/veiculos/${veiculoId}`);
+        const fotos = data.fotos || [];
+        document.getElementById('galleryCountBadge').textContent = `${fotos.length} fotos cadastradas`;
+
+        const grid = document.getElementById('carGalleryGrid');
+        if (!fotos.length) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1; padding: 2.5rem; text-align:center;">
+                    <span style="font-size:2.5rem; display:block; margin-bottom:0.5rem;">📷</span>
+                    <p style="color:var(--text-secondary);">Nenhuma foto cadastrada para este carro ainda.</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = fotos.map((f, idx) => `
+            <div class="gallery-photo-card">
+                <img src="data:${f.mimetype || 'image/jpeg'};base64,${f.base64}" class="gallery-photo-img" alt="Foto ${idx+1}">
+                <button class="gallery-photo-delete" onclick="excluirFoto(${f.id}, ${veiculoId})" title="Excluir esta foto">
+                    🗑️ Excluir
+                </button>
+            </div>
+        `).join('');
+    } catch (e) {
+        toast('Erro ao carregar fotos: ' + e.message, 'error');
+    }
+}
+
+// Upload adicional de fotos direto na Galeria
+document.getElementById('galleryUploadInput').addEventListener('change', async e => {
+    if (!e.target.files || !e.target.files.length || !activeGalleryVehicleId) return;
+    const files = Array.from(e.target.files);
+    const fotosToAdd = [];
+
+    for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        const b64 = await new Promise(res => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.readAsDataURL(file);
+        });
+        fotosToAdd.push({
+            nome: file.name,
+            mimetype: file.type,
+            base64: b64,
+        });
+    }
+
+    try {
+        toast(`Enviando ${fotosToAdd.length} foto(s)...`);
+        await api(`/veiculos/${activeGalleryVehicleId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ novas_fotos: fotosToAdd }),
+        });
+        toast('Fotos adicionadas com sucesso!');
+        loadGalleryPhotos(activeGalleryVehicleId);
+        loadVeiculos();
+    } catch (err) {
+        toast('Erro ao enviar fotos: ' + err.message, 'error');
+    } finally {
+        e.target.value = '';
+    }
+});
+
+window.excluirFoto = async (fotoId, veiculoId) => {
+    if (!confirm('Deseja excluir esta foto?')) return;
+    try {
+        await api(`/veiculos/fotos/${fotoId}`, { method: 'DELETE' });
+        toast('Foto excluída.');
+        loadGalleryPhotos(veiculoId);
+        loadVeiculos();
+    } catch (e) {
+        toast('Erro ao excluir foto: ' + e.message, 'error');
+    }
+};
+
+document.getElementById('modalFotosClose').addEventListener('click', () => {
+    document.getElementById('modalFotosVeiculo').classList.add('hidden');
 });
 
 // ─── Equipe ────────────────────────────────────────────────────
@@ -553,7 +936,7 @@ function startAutoRefresh() {
         const activePage = document.querySelector('.page.active');
         if (activePage?.id === 'pageDashboard') loadDashboard();
         if (activePage?.id === 'pageLeads') loadLeads();
-    }, 30000); // refresh a cada 30s
+    }, 30000);
 }
 
 // ─── Boot ──────────────────────────────────────────────────────
