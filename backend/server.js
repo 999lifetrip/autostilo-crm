@@ -1198,7 +1198,7 @@ app.get('/api/ia/chat-treinador', authMiddleware, async (req, res) => {
             // Mensagem inicial de boas-vindas do Iago
             const welcome = {
                 role: 'assistant',
-                content: `Fala chefe! 🤝 Eu sou o **Iago**, seu consultor de vendas no WhatsApp da AutoStiloCar.\n\nVocê pode **conversar comigo e me dar qualquer ordem em português simples** que eu me atualizo na hora!\n\n💡 **Exemplos do que você pode me pedir:**\n• *"Iago, avisa que sábado tem feirão com taxa zero no Ford Ka e IPVA pago!"*\n• *"Quando o cliente for de Santa Catarina, avisa que entregamos na porta dele."*\n• *"Não pergunte mais de entrada mínima, foque em opções sem entrada."*\n• *"Como você está programado para falar com clientes negativados hoje?"*\n• *"Simula um atendimento de um cliente procurando um Classic 2013."*`,
+                content: `Fala chefe! 🤝 Eu sou o **Iago**, seu consultor de vendas no WhatsApp da AutoStiloCar.\n\nPode conversar comigo à vontade e me dar qualquer tipo de ordem, instrução ou tirar dúvidas sobre o atendimento que eu me adapto e me atualizo na hora! O que vamos ajustar hoje?`,
                 resumo_ajuste: null,
                 versao_gerada: null,
                 criado_em: new Date().toISOString()
