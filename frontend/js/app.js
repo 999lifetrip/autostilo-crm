@@ -15,10 +15,16 @@ let activeGalleryVehicleId = null;
 
 // ─── Helpers ──────────────────────────────────────────────────
 function api(endpoint, options = {}) {
+    const isFormData = options.body instanceof FormData;
+    const body = (options.body && typeof options.body === 'object' && !isFormData)
+        ? JSON.stringify(options.body)
+        : options.body;
+
     return fetch(`${API}${endpoint}`, {
         ...options,
+        body,
         headers: {
-            'Content-Type': 'application/json',
+            ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...options.headers,
         },
@@ -142,14 +148,15 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
     btn.querySelector('.btn-loader').classList.remove('hidden');
     errEl.classList.add('hidden');
     try {
-        const email = document.getElementById('loginEmail').value;
-        const senha = document.getElementById('loginSenha').value;
-        const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email, senha }) });
+        const email = document.getElementById('loginEmail').value.trim();
+        const senha = document.getElementById('loginSenha').value.trim();
+        const data = await api('/auth/login', { method: 'POST', body: { email, senha } });
         token = data.token;
         currentUser = data.user;
         localStorage.setItem('crm_token', token);
         showApp();
-    } catch {
+    } catch (err) {
+        errEl.textContent = err.message || 'E-mail ou senha incorretos';
         errEl.classList.remove('hidden');
     } finally {
         btn.querySelector('.btn-text').classList.remove('hidden');
