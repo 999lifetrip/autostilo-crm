@@ -148,7 +148,8 @@ async function initTables() {
 // ─── App ─────────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 function authMiddleware(req, res, next) {
@@ -354,6 +355,211 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
         }
 
         res.json({ lead: updated.rows[0] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── TOGGLE IA RÁPIDO (Click direto na tabela / modal) ────────────────────────
+app.post('/api/leads/:telefone/toggle-ia', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const rawPhone = decodeURIComponent(req.params.telefone).replace(/\D/g, '');
+
+        const cur = await activePool.query('SELECT * FROM crm_leads WHERE loja_id = $1 AND telefone = $2', [lojaId, rawPhone]);
+        if (!cur.rows.length) return res.status(404).json({ error: 'Lead não encontrado' });
+
+        const currentIa = cur.rows[0].ia_ativa;
+        const newIa = !currentIa;
+
+        if (newIa === false) {
+            // Desativar IA -> Atendimento Humano
+            await activePool.query(`
+                UPDATE crm_leads 
+                SET ia_ativa = false, etiqueta = 'com_vendedor', etapa_funil = 'com_vendedor', escalado_em = NOW()
+                WHERE loja_id = $1 AND telefone = $2
+            `, [lojaId, rawPhone]);
+
+            await activePool.query(`
+                INSERT INTO n8n_escalacao_alerta (id_conversa, telefone)
+                VALUES ($1, $1)
+                ON CONFLICT (telefone) DO NOTHING
+            `, [rawPhone]).catch(() => {});
+        } else {
+            // Reativar IA -> IA Ativa
+            await activePool.query(`
+                UPDATE crm_leads 
+                SET ia_ativa = true, etiqueta = CASE WHEN etiqueta = 'com_vendedor' THEN 'em_atendimento' ELSE etiqueta END
+                WHERE loja_id = $1 AND telefone = $2
+            `, [lojaId, rawPhone]);
+
+            await activePool.query(`
+                DELETE FROM n8n_escalacao_alerta WHERE telefone = $1
+            `, [rawPhone]).catch(() => {});
+        }
+
+        const updated = await activePool.query(`
+            SELECT l.*, u.nome as vendedor_nome 
+            FROM crm_leads l 
+            LEFT JOIN crm_usuarios u ON l.vendedor_id = u.id 
+            WHERE l.loja_id = $1 AND l.telefone = $2
+        `, [lojaId, rawPhone]);
+
+        res.json({ ok: true, lead: updated.rows[0], ia_ativa: newIa });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── ESTOQUE DE VEÍCULOS & FOTOS (Substituto do Google Drive) ───────────────────
+app.get('/api/veiculos', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { busca, destaque, ativo } = req.query;
+        let where = ['v.loja_id = $1'];
+        let params = [lojaId];
+        let idx = 2;
+
+        if (busca) {
+            where.push(`(v.modelo ILIKE $${idx} OR v.marca ILIKE $${idx} OR v.ano ILIKE $${idx})`);
+            params.push(`%${busca}%`);
+            idx++;
+        }
+        if (destaque !== undefined && destaque !== '') {
+            where.push(`v.destaque = $${idx}`);
+            params.push(destaque === 'true');
+            idx++;
+        }
+        if (ativo !== undefined && ativo !== '') {
+            where.push(`v.ativo = $${idx}`);
+            params.push(ativo === 'true');
+            idx++;
+        }
+
+        const query = `
+            SELECT v.*, 
+                   COUNT(f.id)::int as total_fotos,
+                   (SELECT f2.base64 FROM crm_veiculos_fotos f2 WHERE f2.veiculo_id = v.id ORDER BY f2.ordem ASC, f2.id ASC LIMIT 1) as foto_capa
+            FROM crm_veiculos v
+            LEFT JOIN crm_veiculos_fotos f ON f.veiculo_id = v.id
+            WHERE ${where.join(' AND ')}
+            GROUP BY v.id
+            ORDER BY v.destaque DESC, v.atualizado_em DESC
+        `;
+        const result = await activePool.query(query, params);
+        res.json(result.rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/veiculos/:id', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { id } = req.params;
+        const vRes = await activePool.query('SELECT * FROM crm_veiculos WHERE loja_id = $1 AND id = $2', [lojaId, id]);
+        if (!vRes.rows.length) return res.status(404).json({ error: 'Veículo não encontrado' });
+
+        const fotosRes = await activePool.query('SELECT id, nome_arquivo, mimetype, base64, ordem, criado_em FROM crm_veiculos_fotos WHERE veiculo_id = $1 ORDER BY ordem ASC, id ASC', [id]);
+        res.json({ veiculo: vRes.rows[0], fotos: fotosRes.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/veiculos', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { modelo, marca, ano, preco, cor, cambio, km, combustivel, opcionais, diferenciais, descricao, destaque = false, ativo = true, fotos = [] } = req.body;
+
+        const vRes = await activePool.query(`
+            INSERT INTO crm_veiculos (loja_id, modelo, marca, ano, preco, cor, cambio, km, combustivel, opcionais, diferenciais, descricao, destaque, ativo)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING *
+        `, [lojaId, modelo, marca, ano, preco || 0, cor, cambio, km || 0, combustivel, opcionais, diferenciais, descricao, destaque, ativo]);
+        const veiculo = vRes.rows[0];
+
+        if (Array.isArray(fotos) && fotos.length > 0) {
+            let ordem = 1;
+            for (const f of fotos) {
+                const b64 = (f.base64 || f).replace(/^data:[^;]+;base64,/, '');
+                const mime = f.mimetype || 'image/jpeg';
+                const nome = f.nome || `foto_${ordem}.jpg`;
+                await activePool.query(`
+                    INSERT INTO crm_veiculos_fotos (veiculo_id, nome_arquivo, mimetype, base64, ordem)
+                    VALUES ($1, $2, $3, $4, $5)
+                `, [veiculo.id, nome, mime, b64, ordem++]);
+            }
+        }
+
+        res.json({ ok: true, veiculo });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/veiculos/:id', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { id } = req.params;
+        const { modelo, marca, ano, preco, cor, cambio, km, combustivel, opcionais, diferenciais, descricao, destaque, ativo, novas_fotos = [] } = req.body;
+
+        const updated = await activePool.query(`
+            UPDATE crm_veiculos
+            SET modelo = COALESCE($1, modelo),
+                marca = COALESCE($2, marca),
+                ano = COALESCE($3, ano),
+                preco = COALESCE($4, preco),
+                cor = COALESCE($5, cor),
+                cambio = COALESCE($6, cambio),
+                km = COALESCE($7, km),
+                combustivel = COALESCE($8, combustivel),
+                opcionais = COALESCE($9, opcionais),
+                diferenciais = COALESCE($10, diferenciais),
+                descricao = COALESCE($11, descricao),
+                destaque = COALESCE($12, destaque),
+                ativo = COALESCE($13, ativo),
+                atualizado_em = NOW()
+            WHERE loja_id = $14 AND id = $15
+            RETURNING *
+        `, [modelo, marca, ano, preco, cor, cambio, km, combustivel, opcionais, diferenciais, descricao, destaque, ativo, lojaId, id]);
+
+        if (Array.isArray(novas_fotos) && novas_fotos.length > 0) {
+            const countRes = await activePool.query('SELECT COALESCE(MAX(ordem), 0) as max_ordem FROM crm_veiculos_fotos WHERE veiculo_id = $1', [id]);
+            let ordem = parseInt(countRes.rows[0].max_ordem) + 1;
+            for (const f of novas_fotos) {
+                const b64 = (f.base64 || f).replace(/^data:[^;]+;base64,/, '');
+                const mime = f.mimetype || 'image/jpeg';
+                const nome = f.nome || `foto_${ordem}.jpg`;
+                await activePool.query(`
+                    INSERT INTO crm_veiculos_fotos (veiculo_id, nome_arquivo, mimetype, base64, ordem)
+                    VALUES ($1, $2, $3, $4, $5)
+                `, [id, nome, mime, b64, ordem++]);
+            }
+        }
+
+        res.json({ ok: true, veiculo: updated.rows[0] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/veiculos/:id', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { id } = req.params;
+        await activePool.query('DELETE FROM crm_veiculos WHERE loja_id = $1 AND id = $2', [lojaId, id]);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/veiculos/fotos/:fotoId', authMiddleware, async (req, res) => {
+    try {
+        const { fotoId } = req.params;
+        await activePool.query('DELETE FROM crm_veiculos_fotos WHERE id = $1', [fotoId]);
+        res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
