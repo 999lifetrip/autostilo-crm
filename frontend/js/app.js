@@ -331,39 +331,48 @@ async function loadLeads() {
 
 function renderLeadsTable(leads) {
     const tbody = document.getElementById('leadsTableBody');
-    if (!leads.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="table-loading">Nenhum lead encontrado</td></tr>`;
+    if (!tbody) return;
+    if (!leads || !leads.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="table-loading">Nenhum lead encontrado</td></tr>`;
         return;
     }
-    tbody.innerHTML = leads.map(l => `
-        <tr onclick="openLead('${encodeURIComponent(l.telefone)}')">
-            <td>
-                <div class="lead-cell">
-                    <div class="lead-avatar">${initials(l.nome || l.telefone)}</div>
-                    <div>
-                        <div class="lead-name">${l.nome || '(sem nome)'}</div>
-                        <div class="lead-phone">${formatTel(l.telefone)}</div>
+    tbody.innerHTML = leads.map(l => {
+        const rawMsg = l.ultima_mensagem || '—';
+        const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
+
+        return `
+            <tr onclick="openLead('${encodeURIComponent(l.telefone)}')">
+                <td>
+                    <div class="lead-cell">
+                        <div class="lead-avatar">${initials(l.nome || l.telefone)}</div>
+                        <div>
+                            <div class="lead-name">${escapeHtml(l.nome || '(sem nome)')}</div>
+                            <div class="lead-phone">${formatTel(l.telefone)}</div>
+                        </div>
                     </div>
-                </div>
-            </td>
-            <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.82rem">
-                ${l.ultima_mensagem || '—'}
-            </td>
-            <td>${badgeEtiqueta(l.etiqueta)}</td>
-            <td style="color:var(--text-secondary);font-size:0.82rem">${l.vendedor_nome || '—'}</td>
-            <td>
-                <button class="ia-toggle-btn ${l.ia_ativa ? 'ia-on' : 'ia-off'}" 
-                        onclick="event.stopPropagation(); toggleIaStatus('${encodeURIComponent(l.telefone)}', ${l.ia_ativa})" 
-                        title="Clique para alternar entre IA Ativa e Atendimento Humano">
-                    <span class="ia-toggle-icon">${l.ia_ativa ? '🤖' : '👤'}</span>
-                    <span class="ia-toggle-text">${l.ia_ativa ? 'IA Ativa' : 'Humano'}</span>
-                    <span class="ia-toggle-switch"></span>
-                </button>
-            </td>
-            <td style="color:var(--text-secondary);font-size:0.8rem">${timeAgo(l.ultima_interacao)}</td>
-            <td><button class="btn-detail" onclick="event.stopPropagation();openLead('${encodeURIComponent(l.telefone)}')">Ver →</button></td>
-        </tr>
-    `).join('');
+                </td>
+                <td>
+                    <button class="ia-toggle-btn ${l.ia_ativa ? 'ia-on' : 'ia-off'}" 
+                            onclick="event.stopPropagation(); toggleIaStatus('${encodeURIComponent(l.telefone)}', ${l.ia_ativa})" 
+                            title="Clique para alternar entre IA Ativa e Atendimento Humano">
+                        <span class="ia-toggle-icon">${l.ia_ativa ? '🤖' : '👤'}</span>
+                        <span class="ia-toggle-text">${l.ia_ativa ? 'IA Ativa' : 'Humano'}</span>
+                        <span class="ia-toggle-switch"></span>
+                    </button>
+                </td>
+                <td>${badgeEtiqueta(l.etiqueta)}</td>
+                <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.8rem">
+                    ${escapeHtml(cleanMsg)}
+                </td>
+                <td style="color:var(--text-secondary);font-size:0.78rem;white-space:nowrap;">${timeAgo(l.ultima_interacao)}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); openLead('${encodeURIComponent(l.telefone)}')">
+                        Ver →
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // ─── TOGGLE IA RÁPIDO ON/OFF ───────────────────────────────────
@@ -385,7 +394,7 @@ window.toggleIaStatus = async (telEncoded, currentStatus) => {
 
 function renderPagination(total, atual) {
     const el = document.getElementById('pagination');
-    if (total <= 1) { el.innerHTML = ''; return; }
+    if (!el || total <= 1) { if (el) el.innerHTML = ''; return; }
     let html = `<button class="page-btn" onclick="goPage(${atual-1})" ${atual<=1?'disabled':''}>‹</button>`;
     for (let i = 1; i <= total; i++) {
         if (i === 1 || i === total || Math.abs(i - atual) <= 2) {
@@ -402,7 +411,7 @@ window.goPage = (p) => { leadsState.pagina = p; loadLeads(); };
 
 // Search Leads
 let searchTimeout;
-document.getElementById('searchInput').addEventListener('input', e => {
+document.getElementById('searchInput')?.addEventListener('input', e => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
         leadsState.busca = e.target.value;
@@ -411,21 +420,15 @@ document.getElementById('searchInput').addEventListener('input', e => {
     }, 350);
 });
 
-// Filters Leads
-document.querySelectorAll('.filter-chips .filter-chip[data-filter="ia_ativa"]').forEach(chip => {
+// Filters Leads por Etiqueta
+document.querySelectorAll('#etiquetasFilter .filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-        document.querySelectorAll('.filter-chips .filter-chip[data-filter="ia_ativa"]').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('#etiquetasFilter .filter-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
-        leadsState.ia_ativa = chip.dataset.value;
+        leadsState.etiqueta = chip.dataset.etiqueta || '';
         leadsState.pagina = 1;
         loadLeads();
     });
-});
-
-document.getElementById('filterEtiqueta').addEventListener('change', e => {
-    leadsState.etiqueta = e.target.value;
-    leadsState.pagina = 1;
-    loadLeads();
 });
 
 // ─── Lead Modal ────────────────────────────────────────────────
