@@ -467,14 +467,23 @@
                         </label>
                     </div>
 
+                    <!-- FOTOS ATUAIS DO CARRO (SE EDITANDO) -->
+                    <div class="form-group" id="existingPhotosGroup" style="display:none;">
+                        <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span>📸 Fotos Cadastradas no Estoque (<span id="existingPhotosCount">0</span>)</span>
+                            <span style="font-size:0.75rem; color:var(--brand-accent); font-weight:600;">⭐ A 1ª foto é enviada com a ficha técnica</span>
+                        </label>
+                        <div class="car-gallery-grid" id="modalVeiculoExistingPhotos" style="max-height: 240px; margin-bottom: 12px;"></div>
+                    </div>
+
                     <!-- FOTOS UPLOAD DRAG & DROP -->
                     <div class="form-group">
-                        <label>📸 Fotos do Carro (O Iago enviará essas fotos no WhatsApp)</label>
+                        <label>➕ Adicionar Mais Fotos do Carro</label>
                         <div class="photo-dropzone" id="photoDropzone">
                             <input type="file" id="photoInput" multiple accept="image/*" class="hidden">
                             <div class="dropzone-inner" onclick="document.getElementById('photoInput').click()">
                                 <span class="dropzone-icon">📷</span>
-                                <span class="dropzone-text">Clique ou arraste as fotos do carro aqui</span>
+                                <span class="dropzone-text">Clique ou arraste novas fotos aqui</span>
                                 <span class="dropzone-sub">Suporta JPG, PNG, WEBP (selecione várias fotos de uma vez)</span>
                             </div>
                             <div class="photos-preview-grid" id="photosPreviewGrid"></div>
