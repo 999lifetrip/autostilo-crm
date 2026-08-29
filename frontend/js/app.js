@@ -208,7 +208,7 @@ async function loadDashboard() {
         const data = await api('/dashboard');
 
         document.getElementById('dashDate').textContent =
-            new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+            new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
         document.getElementById('statTotalLeads').textContent = data.total_leads ?? 0;
         document.getElementById('statIaAtiva').textContent = data.ia_ativa ?? 0;
@@ -219,6 +219,7 @@ async function loadDashboard() {
         renderEtiquetasChart(data.etiquetas || []);
         renderAtividadeChart(data.atividade || []);
         loadEscaladosRecentes();
+        loadLiveActivity();
     } catch {}
 }
 
@@ -228,24 +229,28 @@ function renderEtiquetasChart(etiquetas) {
     const total = etiquetas.reduce((s, e) => s + parseInt(e.total), 0);
     el.innerHTML = etiquetas.map(e => {
         const pct = total > 0 ? Math.round((parseInt(e.total) / total) * 100) : 0;
-        const info = ETIQUETAS[e.etiqueta] || { emoji: '🏷️', label: e.etiqueta };
-        return `<div class="chart-row">
-            <div class="chart-label">${info.emoji} ${info.label}</div>
-            <div class="chart-bar-bg"><div class="chart-bar-fill" style="width:${pct}%"></div></div>
-            <div class="chart-val">${e.total} (${pct}%)</div>
+        const info = ETIQUETAS[e.etiqueta] || { emoji: '🏷️', label: e.etiqueta, cls: 'badge-novo' };
+        return `<div class="chart-row" style="margin-bottom: 0.85rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">${info.emoji} ${info.label}</span>
+                <span style="font-size: 0.8rem; font-weight: 800; color: var(--brand-accent);">${e.total} <small style="color: #94a3b8; font-weight: normal;">(${pct}%)</small></span>
+            </div>
+            <div class="etiqueta-bar-track">
+                <div class="etiqueta-bar-fill" style="width:${Math.max(pct, 3)}%"></div>
+            </div>
         </div>`;
     }).join('');
 }
 
 function renderAtividadeChart(atividade) {
     const el = document.getElementById('atividadeChart');
-    if (!atividade.length) { el.innerHTML = '<div class="empty-state">Sem dados ainda</div>'; return; }
-    const max = Math.max(...atividade.map(a => parseInt(a.total)));
+    if (!atividade.length) { el.innerHTML = '<div class="empty-state">Sem dados de atividade ainda</div>'; return; }
+    const max = Math.max(...atividade.map(a => parseInt(a.total)), 1);
     el.innerHTML = atividade.map(a => {
-        const pct = max > 0 ? Math.round((parseInt(a.total) / max) * 100) : 4;
+        const pct = Math.round((parseInt(a.total) / max) * 100);
         const dia = new Date(a.dia).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-        return `<div class="ativ-bar-wrap">
-            <div class="ativ-bar" style="height:${Math.max(pct, 4)}%" data-val="${a.total}"></div>
+        return `<div class="ativ-bar-wrap" title="${a.total} mensagens em ${dia}">
+            <div class="ativ-bar" style="height:${Math.max(pct, 6)}%" data-val="${a.total}"></div>
             <span class="ativ-label">${dia}</span>
         </div>`;
     }).join('');
@@ -253,22 +258,81 @@ function renderAtividadeChart(atividade) {
 
 async function loadEscaladosRecentes() {
     try {
-        const data = await api('/leads?ia_ativa=false&limite=5');
+        const data = await api('/leads?ia_ativa=false&limite=6');
         const el = document.getElementById('escaladosList');
+        const badgeCount = document.getElementById('badgeEscaladosCount');
+
+        const totalEscalados = data.total || data.leads.length;
+        if (badgeCount) {
+            badgeCount.textContent = totalEscalados === 1 ? '1 cliente aguardando' : `${totalEscalados} clientes aguardando`;
+        }
+
         if (!data.leads.length) {
-            el.innerHTML = '<div class="empty-state">Sem atendimentos humanos no momento 🎉</div>';
+            el.innerHTML = '<div class="empty-state">Sem clientes aguardando atendimento humano no momento 🎉</div>';
             return;
         }
-        el.innerHTML = data.leads.map(l => `
-            <div class="escalado-item" onclick="openLead('${encodeURIComponent(l.telefone)}')">
-                <div class="lead-avatar">${initials(l.nome || l.telefone)}</div>
-                <div>
-                    <div class="escalado-nome">${l.nome || formatTel(l.telefone)}</div>
-                    <div class="escalado-tel">${formatTel(l.telefone)}</div>
+
+        el.innerHTML = data.leads.map(l => {
+            const rawMsg = l.ultima_mensagem || 'Cliente solicitou atendimento com consultor';
+            const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
+
+            return `
+                <div class="escalado-card-rich" onclick="openLead('${encodeURIComponent(l.telefone)}')">
+                    <div class="escalado-main-info">
+                        <div class="escalado-avatar">${initials(l.nome || l.telefone)}</div>
+                        <div class="escalado-details">
+                            <div class="escalado-title-row">
+                                <span class="escalado-nome">${escapeHtml(l.nome || formatTel(l.telefone))}</span>
+                                ${badgeEtiqueta(l.etiqueta)}
+                            </div>
+                            <div class="escalado-tel">📱 ${formatTel(l.telefone)}</div>
+                            <div class="escalado-last-msg">💬 "${escapeHtml(cleanMsg)}"</div>
+                        </div>
+                    </div>
+                    <div class="escalado-actions-side">
+                        <span class="escalado-wait-badge">⏱️ ${timeAgo(l.ultima_interacao)}</span>
+                        <button class="btn-assumir-escalado" onclick="event.stopPropagation(); openLead('${encodeURIComponent(l.telefone)}')">
+                            💬 Atender Agora
+                        </button>
+                    </div>
                 </div>
-                <div class="escalado-tempo">${timeAgo(l.ultima_interacao)}</div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
+    } catch {}
+}
+
+async function loadLiveActivity() {
+    try {
+        const data = await api('/leads?limite=5');
+        const el = document.getElementById('liveActivityList');
+        if (!data.leads.length) {
+            el.innerHTML = '<div class="empty-state">Sem mensagens recentes</div>';
+            return;
+        }
+
+        el.innerHTML = data.leads.map(l => {
+            const rawMsg = l.ultima_mensagem || 'Iniciou conversa';
+            const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
+            const isBot = l.ia_ativa;
+
+            return `
+                <div class="live-activity-item" onclick="openLead('${encodeURIComponent(l.telefone)}')">
+                    <div class="live-act-left">
+                        <div class="live-act-avatar">${isBot ? '🤖' : '👤'}</div>
+                        <div class="live-act-content">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span class="live-act-name">${escapeHtml(l.nome || formatTel(l.telefone))}</span>
+                                <span style="font-size: 0.7rem; color: ${isBot ? '#34d399' : '#fbbf24'}; font-weight: 700;">
+                                    ${isBot ? '• Iago Ativo' : '• Com Consultor'}
+                                </span>
+                            </div>
+                            <div class="live-act-msg">"${escapeHtml(cleanMsg)}"</div>
+                        </div>
+                    </div>
+                    <span class="live-act-time">${timeAgo(l.ultima_interacao)}</span>
+                </div>
+            `;
+        }).join('');
     } catch {}
 }
 
