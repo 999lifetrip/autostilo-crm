@@ -216,43 +216,10 @@ async function loadDashboard() {
         document.getElementById('statEscaladosHoje').textContent = data.escalados_hoje ?? 0;
         document.getElementById('badgeLeads').textContent = data.total_leads ?? 0;
 
-        renderEtiquetasChart(data.etiquetas || []);
-        renderAtividadeChart(data.atividade || []);
         loadEscaladosRecentes();
         loadLiveActivity();
     } catch {}
 }
-
-function renderEtiquetasChart(etiquetas) {
-    const el = document.getElementById('etiquetasChart');
-    if (!etiquetas.length) { el.innerHTML = '<div class="empty-state">Sem dados de funil ainda</div>'; return; }
-    const total = etiquetas.reduce((s, e) => s + parseInt(e.total), 0);
-    el.innerHTML = etiquetas.map(e => {
-        const pct = total > 0 ? Math.round((parseInt(e.total) / total) * 100) : 0;
-        const info = ETIQUETAS[e.etiqueta] || { emoji: '🏷️', label: e.etiqueta, cls: 'badge-novo' };
-        return `<div class="chart-row" style="margin-bottom: 0.85rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-                <span style="font-size: 0.85rem; font-weight: 700; color: #fff;">${info.emoji} ${info.label}</span>
-                <span style="font-size: 0.8rem; font-weight: 800; color: var(--brand-accent);">${e.total} <small style="color: #94a3b8; font-weight: normal;">(${pct}%)</small></span>
-            </div>
-            <div class="etiqueta-bar-track">
-                <div class="etiqueta-bar-fill" style="width:${Math.max(pct, 3)}%"></div>
-            </div>
-        </div>`;
-    }).join('');
-}
-
-function renderAtividadeChart(atividade) {
-    const el = document.getElementById('atividadeChart');
-    if (!atividade.length) { el.innerHTML = '<div class="empty-state">Sem dados de atividade ainda</div>'; return; }
-    const max = Math.max(...atividade.map(a => parseInt(a.total)), 1);
-    el.innerHTML = atividade.map(a => {
-        const pct = Math.round((parseInt(a.total) / max) * 100);
-        const dia = new Date(a.dia).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-        return `<div class="ativ-bar-wrap" title="${a.total} mensagens em ${dia}">
-            <div class="ativ-bar" style="height:${Math.max(pct, 6)}%" data-val="${a.total}"></div>
-            <span class="ativ-label">${dia}</span>
-        </div>`;
     }).join('');
 }
 
