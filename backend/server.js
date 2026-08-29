@@ -307,7 +307,31 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
             [decodeURIComponent(telefone)]
         ).catch(() => ({ rows: [] }));
 
-        res.json({ lead: lead.rows[0], historico: historico.rows });
+        const telNum = decodeURIComponent(telefone).replace(/\D/g, '');
+        const audios = await activePool.query(
+            `SELECT * FROM crm_mensagens_audios WHERE telefone = $1 OR telefone = $2 ORDER BY id DESC LIMIT 50`,
+            [decodeURIComponent(telefone), telNum]
+        ).catch(() => ({ rows: [] }));
+
+        res.json({ lead: lead.rows[0], historico: historico.rows, audios: audios.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Webhook para gravar áudios de clientes no CRM
+app.post('/api/leads/audio-webhook', async (req, res) => {
+    try {
+        const { telefone, id_mensagem, base64, transcricao, tipo } = req.body;
+        if (!telefone || !base64) return res.status(400).json({ error: 'Telefone e base64 são obrigatórios' });
+
+        const cleanBase64 = base64.replace(/^data:[^;]+;base64,/, '');
+        await activePool.query(`
+            INSERT INTO crm_mensagens_audios (telefone, id_mensagem, base64, transcricao, tipo)
+            VALUES ($1, $2, $3, $4, $5)
+        `, [telefone.replace(/\D/g, ''), id_mensagem, cleanBase64, transcricao || null, tipo || 'incoming']);
+
+        res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
