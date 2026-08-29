@@ -1176,6 +1176,143 @@ document.getElementById('btnAplicarESalvar')?.addEventListener('click', async ()
     document.getElementById('sugestaoIaInput').value = '';
 });
 
+// ─── TABS MODO VISUAL / AVANÇADO ──────────────────────────────
+const tabModoVisual = document.getElementById('tabModoVisual');
+const tabModoAvancado = document.getElementById('tabModoAvancado');
+const viewModoVisual = document.getElementById('viewModoVisual');
+const viewModoAvancado = document.getElementById('viewModoAvancado');
+
+tabModoVisual?.addEventListener('click', () => {
+    tabModoVisual.classList.add('active');
+    tabModoAvancado.classList.remove('active');
+    viewModoVisual.classList.remove('hidden');
+    viewModoAvancado.classList.add('hidden');
+});
+
+tabModoAvancado?.addEventListener('click', () => {
+    tabModoAvancado.classList.add('active');
+    tabModoVisual.classList.remove('active');
+    viewModoAvancado.classList.remove('hidden');
+    viewModoVisual.classList.add('hidden');
+});
+
+// Tags de sugestão rápida no Modo Visual
+document.querySelectorAll('.btn-quick-tag').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const input = document.getElementById('promoTextoInput');
+        input.value = btn.dataset.tag;
+        document.getElementById('promoAtivaCheck').checked = true;
+        input.focus();
+        toast('Sugestão aplicada no campo de promoção!');
+    });
+});
+
+// Seletor de Tom de Voz
+document.querySelectorAll('.tone-card').forEach(card => {
+    card.addEventListener('click', () => {
+        document.querySelectorAll('.tone-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        toast(`Tom de voz alterado para: ${card.querySelector('.tone-title').textContent}`);
+    });
+});
+
+// Assistente Mágico no Modo Visual
+document.getElementById('btnAplicarSugestaoVisual')?.addEventListener('click', async () => {
+    const sugestao = document.getElementById('sugestaoVisualInput').value.trim();
+    if (!sugestao) {
+        toast('Digite um ajuste para o Iago!', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btnAplicarSugestaoVisual');
+    const textEl = document.getElementById('btnVisualRefinarText');
+    const spinner = document.getElementById('btnVisualRefinarSpinner');
+    const resultBox = document.getElementById('iaVisualResult');
+    const resumoEl = document.getElementById('iaVisualResumo');
+
+    try {
+        btn.disabled = true;
+        textEl.textContent = 'Aplicando com IA...';
+        spinner.classList.remove('hidden');
+
+        const promptAtual = document.getElementById('promptTextarea').value;
+        const res = await api('/ia/refinar', {
+            method: 'POST',
+            body: { sugestao, prompt_atual: promptAtual }
+        });
+
+        document.getElementById('promptTextarea').value = res.prompt_refinado;
+        updatePromptStats(res.prompt_refinado);
+
+        resumoEl.textContent = res.resumo_alteracoes;
+        resultBox.classList.remove('hidden');
+
+        // Salva automaticamente
+        await salvarPrompt(`Ajuste Mágico Visual: ${sugestao.slice(0, 50)}...`);
+        document.getElementById('sugestaoVisualInput').value = '';
+        toast('🎉 Iago atualizado e pronto no WhatsApp com a nova regra!');
+    } catch (e) {
+        toast('Erro ao aplicar ajuste: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        textEl.textContent = '✨ Aplicar Ajuste com IA';
+        spinner.classList.add('hidden');
+    }
+});
+
+// Salvar Geral (funciona em ambos os modos)
+async function salvarConfiguracoesGerais() {
+    const isVisual = !viewModoVisual.classList.contains('hidden');
+    if (isVisual) {
+        // Se estiver no modo visual, compõe as instruções
+        const promoAtiva = document.getElementById('promoAtivaCheck').checked;
+        const promoTexto = document.getElementById('promoTextoInput').value.trim();
+        const activeTone = document.querySelector('.tone-card.active')?.dataset.tone || 'consultivo';
+        const trocaMoto = document.getElementById('trocaMotoCheck').checked;
+        const trocaCarro = document.getElementById('trocaCarroCheck').checked;
+        const negativados = document.getElementById('negativadoCheck').checked;
+        const semEntrada = document.getElementById('semEntradaCheck').checked;
+
+        let instrucoesVisuais = [];
+        if (promoAtiva && promoTexto) {
+            instrucoesVisuais.push(`Campanha ativa da semana: "${promoTexto}" (mencione naturalmente aos clientes interessados)`);
+        }
+        if (activeTone === 'fechador') {
+            instrucoesVisuais.push(`Tom de voz: Mais direto, focado em agilidade e fechamento de simulação.`);
+        } else if (activeTone === 'calmo') {
+            instrucoesVisuais.push(`Tom de voz: Mais calmo, transparente e detalhista nas explicações.`);
+        }
+        instrucoesVisuais.push(`Trocas aceitas: ${trocaCarro ? 'Carros' : ''} ${trocaMoto ? 'e Motos' : ''}`);
+        instrucoesVisuais.push(`Negativados: ${negativados ? 'Atender com otimismo e rodar simulação' : 'Informar restrições com delicadeza'}`);
+        instrucoesVisuais.push(`Sem Entrada: ${semEntrada ? 'Destacar que há opções 100% financiadas' : 'Pedir entrada padrão'}`);
+
+        const sugestaoComposta = instrucoesVisuais.join('. ');
+        
+        try {
+            const btn = document.getElementById('btnSalvarPrompt');
+            btn.disabled = true;
+            btn.textContent = 'Sincronizando Iago...';
+
+            const promptAtual = document.getElementById('promptTextarea').value;
+            const res = await api('/ia/refinar', {
+                method: 'POST',
+                body: { sugestao: sugestaoComposta, prompt_atual: promptAtual }
+            });
+
+            document.getElementById('promptTextarea').value = res.prompt_refinado;
+            updatePromptStats(res.prompt_refinado);
+            await salvarPrompt('Atualização pelo Modo Visual Prático');
+            toast('✅ Todas as configurações do Iago foram ativadas no WhatsApp com sucesso!');
+        } catch (e) {
+            toast('Erro ao sincronizar: ' + e.message, 'error');
+        }
+    } else {
+        await salvarPrompt();
+    }
+}
+
+document.getElementById('btnSalvarPrompt')?.addEventListener('click', salvarConfiguracoesGerais);
+
 // Chips de sugestões rápidas
 document.querySelectorAll('.btn-sugestao-chip').forEach(chip => {
     chip.addEventListener('click', () => {
