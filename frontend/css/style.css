@@ -1164,22 +1164,40 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
 }
 .gallery-photo-card {
     position: relative;
-    height: 140px;
+    height: 160px;
     border-radius: var(--radius-md);
     overflow: hidden;
     border: 1px solid var(--border);
     background: #091a11;
-    transition: transform var(--transition);
+    transition: all var(--transition);
 }
 .gallery-photo-card:hover {
     transform: scale(1.02);
     border-color: var(--border-accent);
+}
+.gallery-photo-card.is-capa {
+    border: 2px solid var(--brand-primary);
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.45);
 }
 .gallery-photo-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     cursor: pointer;
+}
+.badge-capa-destaque {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #02180e;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    z-index: 2;
 }
 .gallery-photo-delete {
     position: absolute;
@@ -1195,15 +1213,47 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
+    z-index: 2;
 }
 .gallery-photo-delete:hover {
     background: var(--red);
     color: #fff;
+}
+.gallery-photo-bottom {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    display: flex;
+    justify-content: flex-start;
+    z-index: 2;
+}
+.btn-definir-capa {
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    color: var(--brand-accent);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    border-radius: var(--radius-sm);
+    padding: 0.28rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: center;
+}
+.btn-definir-capa:hover {
+    background: var(--brand-primary);
+    color: #02180e;
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
 }
 
 @media (max-width: 768px) {
     .form-row-3, .form-row-2 { grid-template-columns: 1fr; }
     .veiculos-grid { grid-template-columns: 1fr; }
 }
+
 
 
