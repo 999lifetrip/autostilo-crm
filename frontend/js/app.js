@@ -227,8 +227,6 @@ async function loadDashboard() {
         loadLiveActivity();
     } catch {}
 }
-    }).join('');
-}
 
 async function loadEscaladosRecentes() {
     try {
