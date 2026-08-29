@@ -1439,20 +1439,196 @@ input:checked + .toggle-slider::before { background: var(--brand-accent); transf
     transform: translateX(4px);
 }
 
-.spinner-small {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    vertical-align: middle;
-    margin-left: 6px;
+/* ─── IA TABS & VISUAL MODE STYLES ──────────────────────────── */
+.ia-tabs-nav {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.8rem;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.ia-tab-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: inherit;
+}
+
+.ia-tab-btn:hover {
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--text-primary);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.ia-tab-btn.active {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2));
+    border-color: var(--brand-primary);
+    color: var(--brand-accent);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+.ia-visual-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 1.25rem;
+}
+
+.ia-card-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.ia-icon-glow {
+    font-size: 1.4rem;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-subtitle {
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+    display: block;
+    margin-top: 2px;
+}
+
+.ia-card-highlight {
+    border-color: rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+}
+
+/* Toggle switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.15);
+    transition: .3s;
+    border-radius: 24px;
+    border: 1px solid var(--border);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--brand-primary);
+    border-color: var(--brand-primary);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+    background-color: #02180e;
+}
+
+/* Promo quick suggestions */
+.promo-quick-suggestions {
+    margin-top: 0.8rem;
+}
+
+.quick-label {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    display: block;
+}
+
+.quick-tags-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.btn-quick-tag {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 0.35rem 0.65rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.btn-quick-tag:hover {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: var(--brand-accent);
+}
+
+/* Tone Selector Cards */
+.tone-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 0.7rem;
+}
+
+.tone-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    text-align: center;
+}
+
+.tone-card:hover {
+    border-color: rgba(16, 185, 129, 0.4);
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.tone-card.active {
+    border: 2px solid var(--brand-primary);
+    background: rgba(16, 185, 129, 0.12);
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+}
+
+.tone-icon { font-size: 1.6rem; margin-bottom: 0.3rem; }
+.tone-title { font-size: 0.82rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.3rem; }
+.tone-desc { font-size: 0.7rem; color: var(--text-secondary); line-height: 1.35; }
+
+/* Checkbox group vertical */
+.checkbox-group-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.4rem;
 }
 
 
