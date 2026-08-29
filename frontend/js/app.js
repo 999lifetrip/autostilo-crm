@@ -814,18 +814,40 @@ async function loadGalleryPhotos(veiculoId) {
             return;
         }
 
-        grid.innerHTML = fotos.map((f, idx) => `
-            <div class="gallery-photo-card">
-                <img src="data:${f.mimetype || 'image/jpeg'};base64,${f.base64}" class="gallery-photo-img" alt="Foto ${idx+1}">
-                <button class="gallery-photo-delete" onclick="excluirFoto(${f.id}, ${veiculoId})" title="Excluir esta foto">
-                    🗑️ Excluir
-                </button>
-            </div>
-        `).join('');
+        grid.innerHTML = fotos.map((f, idx) => {
+            const isCapa = idx === 0;
+            return `
+                <div class="gallery-photo-card ${isCapa ? 'is-capa' : ''}">
+                    ${isCapa ? `<span class="badge-capa-destaque">⭐ Foto Principal (Capa)</span>` : ''}
+                    <img src="data:${f.mimetype || 'image/jpeg'};base64,${f.base64}" class="gallery-photo-img" alt="Foto ${idx+1}">
+                    <button class="gallery-photo-delete" onclick="excluirFoto(${f.id}, ${veiculoId})" title="Excluir esta foto">
+                        🗑️ Excluir
+                    </button>
+                    ${!isCapa ? `
+                        <div class="gallery-photo-bottom">
+                            <button class="btn-definir-capa" onclick="definirCapaFoto(${f.id}, ${veiculoId})">
+                                ⭐ Definir como Capa Principal
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
     } catch (e) {
         toast('Erro ao carregar fotos: ' + e.message, 'error');
     }
 }
+
+window.definirCapaFoto = async (fotoId, veiculoId) => {
+    try {
+        await api(`/veiculos/${veiculoId}/capa/${fotoId}`, { method: 'POST' });
+        toast('⭐ Foto definida como capa principal! O Iago enviará esta foto primeiro com a ficha técnica do carro.');
+        loadGalleryPhotos(veiculoId);
+        loadVeiculos();
+    } catch (e) {
+        toast('Erro ao definir foto de capa: ' + e.message, 'error');
+    }
+};
 
 // Upload adicional de fotos direto na Galeria
 document.getElementById('galleryUploadInput').addEventListener('change', async e => {
