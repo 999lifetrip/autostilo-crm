@@ -165,30 +165,33 @@ document.getElementById('btnLogout').addEventListener('click', logout);
 
 // ─── Navigation ────────────────────────────────────────────────
 const pages = {
-    dashboard: { page: 'pageDashboard', title: 'Dashboard Geral' },
-    leads: { page: 'pageLeads', title: 'Gestão de Leads WhatsApp' },
-    veiculos: { page: 'pageVeiculos', title: 'Estoque de Veículos & Fotos' },
-    equipe: { page: 'pageEquipe', title: 'Equipe de Vendas' },
+    dashboard: { page: 'pageDashboard', title: 'Dashboard Geral', nav: 'navDashboard' },
+    leads: { page: 'pageLeads', title: 'Gestão de Leads WhatsApp', nav: 'navLeads' },
+    veiculos: { page: 'pageVeiculos', title: 'Estoque & Carros do Anúncio', nav: 'navVeiculos' },
+    iaEditor: { page: 'pageIaEditor', title: 'Editor da IA (Iago WhatsApp)', nav: 'navIaEditor' },
+    equipe: { page: 'pageEquipe', title: 'Equipe de Vendas', nav: 'navEquipe' },
 };
 
-function navigate(key) {
-    Object.keys(pages).forEach(k => {
-        const navBtn = document.getElementById(`nav${k.charAt(0).toUpperCase() + k.slice(1)}`);
-        const pageEl = document.getElementById(pages[k].page);
+function navigate(rawKey) {
+    const key = rawKey === 'ia-editor' ? 'iaEditor' : rawKey;
+    Object.entries(pages).forEach(([k, cfg]) => {
+        const navBtn = document.getElementById(cfg.nav);
+        const pageEl = document.getElementById(cfg.page);
         if (k === key) {
             navBtn?.classList.add('active');
             pageEl?.classList.add('active');
+            document.getElementById('headerTitle').textContent = cfg.title;
         } else {
             navBtn?.classList.remove('active');
             pageEl?.classList.remove('active');
         }
     });
-    document.getElementById('headerTitle').textContent = pages[key].title;
     document.getElementById('sidebar').classList.remove('open');
 
     if (key === 'veiculos') loadVeiculos();
     if (key === 'leads') loadLeads();
     if (key === 'dashboard') loadDashboard();
+    if (key === 'iaEditor') loadIaPrompt();
 }
 
 document.querySelectorAll('.nav-item').forEach(btn => {
@@ -1051,6 +1054,173 @@ document.getElementById('formUsuario').addEventListener('submit', async e => {
         toast('Membro criado com sucesso!');
         loadUsuarios();
     } catch (e) { toast(e.message, 'error'); }
+});
+
+// ─── EDITOR DA IA (PROMPTS & REFINAMENTO) ──────────────────────
+let originalPromptBackup = '';
+
+async function loadIaPrompt() {
+    try {
+        const data = await api('/ia/prompt');
+        const textarea = document.getElementById('promptTextarea');
+        textarea.value = data.prompt || '';
+        originalPromptBackup = data.prompt || '';
+
+        updatePromptStats(data.prompt || '');
+        if (data.metadata) {
+            document.getElementById('promptVersionBadge').textContent = `Versão ${data.metadata.versao || 1}`;
+        }
+        carregarHistoricoPrompts();
+    } catch (e) {
+        toast('Erro ao carregar prompt da IA: ' + e.message, 'error');
+    }
+}
+
+function updatePromptStats(text) {
+    const chars = text.length;
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const charEl = document.getElementById('promptCharCount');
+    if (charEl) {
+        charEl.textContent = `${chars.toLocaleString('pt-BR')} caracteres (${words.toLocaleString('pt-BR')} palavras)`;
+    }
+}
+
+document.getElementById('promptTextarea')?.addEventListener('input', e => {
+    updatePromptStats(e.target.value);
+});
+
+async function salvarPrompt(notas = 'Atualização manual') {
+    const btn = document.getElementById('btnSalvarPrompt');
+    const promptText = document.getElementById('promptTextarea').value;
+    if (!promptText.trim()) {
+        toast('O prompt não pode ficar vazio!', 'error');
+        return;
+    }
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Salvando...';
+        const res = await api('/ia/salvar', {
+            method: 'POST',
+            body: { prompt_text: promptText, notas }
+        });
+        toast('🚀 Prompt salvo e publicado no Iago com sucesso!', 'success');
+        document.getElementById('promptVersionBadge').textContent = `Versão ${res.metadata.versao}`;
+        originalPromptBackup = promptText;
+        carregarHistoricoPrompts();
+    } catch (e) {
+        toast('Erro ao salvar prompt: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Salvar & Publicar no WhatsApp';
+    }
+}
+
+document.getElementById('btnSalvarPrompt')?.addEventListener('click', () => salvarPrompt());
+
+// Refinar com IA
+async function refinarPromptComIa() {
+    const sugestao = document.getElementById('sugestaoIaInput').value.trim();
+    if (!sugestao) {
+        toast('Digite uma sugestão para a IA refinar!', 'error');
+        return;
+    }
+
+    const btnText = document.getElementById('btnRefinarText');
+    const spinner = document.getElementById('btnRefinarSpinner');
+    const btn = document.getElementById('btnRefinarPrompt');
+    const resultBox = document.getElementById('iaRefinarResult');
+    const resumoEl = document.getElementById('iaRefinarResumo');
+
+    try {
+        btn.disabled = true;
+        btnText.textContent = 'Processando com IA...';
+        spinner.classList.remove('hidden');
+
+        const promptAtual = document.getElementById('promptTextarea').value;
+        const res = await api('/ia/refinar', {
+            method: 'POST',
+            body: { sugestao, prompt_atual: promptAtual }
+        });
+
+        // Aplica o novo prompt no editor
+        document.getElementById('promptTextarea').value = res.prompt_refinado;
+        updatePromptStats(res.prompt_refinado);
+
+        // Mostra resumo das mudanças
+        resumoEl.textContent = res.resumo_alteracoes;
+        resultBox.classList.remove('hidden');
+        toast('✨ Prompt refinado com sucesso! Revise e clique em Aprovar.');
+    } catch (e) {
+        toast('Erro ao refinar prompt: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btnText.textContent = '✨ Refinar Prompt com IA';
+        spinner.classList.add('hidden');
+    }
+}
+
+document.getElementById('btnRefinarPrompt')?.addEventListener('click', refinarPromptComIa);
+
+document.getElementById('btnDesfazerRefinamento')?.addEventListener('click', () => {
+    document.getElementById('promptTextarea').value = originalPromptBackup;
+    updatePromptStats(originalPromptBackup);
+    document.getElementById('iaRefinarResult').classList.add('hidden');
+    toast('Alterações desfeitas.');
+});
+
+document.getElementById('btnAplicarESalvar')?.addEventListener('click', async () => {
+    const sugestao = document.getElementById('sugestaoIaInput').value.trim();
+    await salvarPrompt(`Refinamento IA: ${sugestao.slice(0, 50)}...`);
+    document.getElementById('iaRefinarResult').classList.add('hidden');
+    document.getElementById('sugestaoIaInput').value = '';
+});
+
+// Chips de sugestões rápidas
+document.querySelectorAll('.btn-sugestao-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const input = document.getElementById('sugestaoIaInput');
+        input.value = chip.dataset.sugestao;
+        input.focus();
+    });
+});
+
+async function carregarHistoricoPrompts() {
+    try {
+        const historico = await api('/ia/historico');
+        const sel = document.getElementById('selectHistoricoPrompt');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">⏮️ Histórico de Versões...</option>' +
+            historico.map(h => `<option value="${h.id}">v${h.versao} • ${new Date(h.criado_em).toLocaleDateString('pt-BR')} ${new Date(h.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (${h.criado_por || 'Admin'})</option>`).join('');
+    } catch {}
+}
+
+document.getElementById('selectHistoricoPrompt')?.addEventListener('change', async e => {
+    const id = e.target.value;
+    if (!id) return;
+    if (!confirm('Deseja restaurar esta versão do prompt?')) return;
+    try {
+        const res = await api(`/ia/restaurar/${id}`, { method: 'POST' });
+        document.getElementById('promptTextarea').value = res.prompt;
+        updatePromptStats(res.prompt);
+        document.getElementById('promptVersionBadge').textContent = `Versão ${res.metadata.versao}`;
+        originalPromptBackup = res.prompt;
+        toast(`Versão ${res.metadata.versao} restaurada!`);
+    } catch (err) {
+        toast('Erro ao restaurar versão: ' + err.message, 'error');
+    }
+});
+
+document.getElementById('btnRestaurarPadrao')?.addEventListener('click', async () => {
+    if (!confirm('Deseja restaurar para o System Prompt Original de Fábrica?')) return;
+    try {
+        const data = await api('/ia/prompt');
+        document.getElementById('promptTextarea').value = data.prompt;
+        updatePromptStats(data.prompt);
+        toast('Prompt padrão restaurado no editor. Clique em Salvar para publicar.');
+    } catch (err) {
+        toast('Erro ao carregar padrão: ' + err.message, 'error');
+    }
 });
 
 // ─── Auto refresh ──────────────────────────────────────────────
