@@ -715,6 +715,37 @@ window.openModalVeiculo = async (id = null) => {
             document.getElementById('veiculoDescricao').value = v.descricao || '';
             document.getElementById('veiculoDestaque').checked = Boolean(v.destaque);
             document.getElementById('veiculoAtivo').checked = Boolean(v.ativo);
+
+            const fotos = data.fotos || [];
+            const existingGroup = document.getElementById('existingPhotosGroup');
+            const existingGrid = document.getElementById('modalVeiculoExistingPhotos');
+            const existingCount = document.getElementById('existingPhotosCount');
+
+            if (fotos.length > 0) {
+                existingGroup.style.display = 'block';
+                existingCount.textContent = fotos.length;
+                existingGrid.innerHTML = fotos.map((f, idx) => {
+                    const isCapa = idx === 0;
+                    return `
+                        <div class="gallery-photo-card ${isCapa ? 'is-capa' : ''}">
+                            ${isCapa ? `<span class="badge-capa-destaque">⭐ Capa Principal</span>` : ''}
+                            <img src="data:${f.mimetype || 'image/jpeg'};base64,${f.base64}" class="gallery-photo-img" alt="Foto ${idx+1}">
+                            <button type="button" class="gallery-photo-delete" onclick="excluirFoto(${f.id}, ${v.id})" title="Excluir esta foto">
+                                🗑️ Excluir
+                            </button>
+                            ${!isCapa ? `
+                                <div class="gallery-photo-bottom">
+                                    <button type="button" class="btn-definir-capa" onclick="definirCapaFotoModal(${f.id}, ${v.id})">
+                                        ⭐ Definir como Capa Principal
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                existingGroup.style.display = 'none';
+            }
         } catch (e) {
             toast('Erro ao carregar dados do carro: ' + e.message, 'error');
             return;
@@ -723,9 +754,21 @@ window.openModalVeiculo = async (id = null) => {
         document.getElementById('modalVeiculoTitle').textContent = '🚗 Cadastrar Novo Veículo';
         document.getElementById('veiculoId').value = '';
         document.getElementById('veiculoAtivo').checked = true;
+        document.getElementById('existingPhotosGroup').style.display = 'none';
     }
 
     modal.classList.remove('hidden');
+};
+
+window.definirCapaFotoModal = async (fotoId, veiculoId) => {
+    try {
+        await api(`/veiculos/${veiculoId}/capa/${fotoId}`, { method: 'POST' });
+        toast('⭐ Foto definida como capa principal!');
+        openModalVeiculo(veiculoId);
+        loadVeiculos();
+    } catch (e) {
+        toast('Erro ao definir capa: ' + e.message, 'error');
+    }
 };
 
 document.getElementById('modalVeiculoClose').addEventListener('click', () => {
