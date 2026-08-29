@@ -565,6 +565,42 @@ app.delete('/api/veiculos/fotos/:fotoId', authMiddleware, async (req, res) => {
     }
 });
 
+// Definir foto como Capa Principal (Destaque / 1ª Foto com informações do carro)
+app.post('/api/veiculos/:id/capa/:fotoId', authMiddleware, async (req, res) => {
+    try {
+        const { id, fotoId } = req.params;
+
+        await activePool.query(`
+            UPDATE crm_veiculos_fotos
+            SET ordem = ordem + 10
+            WHERE veiculo_id = $1 AND id != $2
+        `, [id, fotoId]);
+
+        await activePool.query(`
+            UPDATE crm_veiculos_fotos
+            SET ordem = 1
+            WHERE veiculo_id = $1 AND id = $2
+        `, [id, fotoId]);
+
+        // Reindex order 1, 2, 3...
+        const allFotos = await activePool.query(`
+            SELECT id FROM crm_veiculos_fotos WHERE veiculo_id = $1 ORDER BY ordem ASC, id ASC
+        `, [id]);
+
+        for (let i = 0; i < allFotos.rows.length; i++) {
+            await activePool.query(`
+                UPDATE crm_veiculos_fotos SET ordem = $1 WHERE id = $2
+            `, [i + 1, allFotos.rows[i].id]);
+        }
+
+        await activePool.query(`UPDATE crm_veiculos SET atualizado_em = NOW() WHERE id = $1`, [id]);
+
+        res.json({ ok: true, message: 'Foto definida como capa com sucesso' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/leads/upsert', async (req, res) => {
     const secret = req.headers['x-crm-secret'];
     if (secret !== JWT_SECRET) return res.status(403).json({ error: 'Forbidden' });
