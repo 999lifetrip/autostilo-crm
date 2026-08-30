@@ -314,28 +314,168 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
     try {
         const { lojaId } = req.user;
         const { telefone } = req.params;
+        const telDecoded = decodeURIComponent(telefone);
+        const telClean = telDecoded.replace(/\D/g, '');
 
         const lead = await activePool.query(
             `SELECT l.*, u.nome as vendedor_nome
              FROM crm_leads l LEFT JOIN crm_usuarios u ON l.vendedor_id = u.id
-             WHERE l.loja_id = $1 AND l.telefone = $2`,
-            [lojaId, decodeURIComponent(telefone)]
+             WHERE l.loja_id = $1 AND (l.telefone = $2 OR l.telefone = $3)`,
+            [lojaId, telDecoded, telClean]
         );
         if (!lead.rows.length) return res.status(404).json({ error: 'Lead não encontrado' });
 
         const historico = await activePool.query(
-            `SELECT * FROM n8n_historico_mensagens WHERE session_id = $1 ORDER BY id DESC LIMIT 100`,
-            [decodeURIComponent(telefone)]
+            `SELECT * FROM n8n_historico_mensagens 
+             WHERE session_id = $1 OR session_id = $2 
+             ORDER BY id DESC LIMIT 150`,
+            [telDecoded, telClean]
         ).catch(() => ({ rows: [] }));
 
-        const telNum = decodeURIComponent(telefone).replace(/\D/g, '');
         const audios = await activePool.query(
-            `SELECT * FROM crm_mensagens_audios WHERE telefone = $1 OR telefone = $2 ORDER BY id DESC LIMIT 50`,
-            [decodeURIComponent(telefone), telNum]
+            `SELECT * FROM crm_mensagens_audios 
+             WHERE telefone = $1 OR telefone = $2 
+             ORDER BY id DESC LIMIT 50`,
+            [telDecoded, telClean]
         ).catch(() => ({ rows: [] }));
 
-        res.json({ lead: lead.rows[0], historico: historico.rows, audios: audios.rows });
+        const veiculosFotos = await activePool.query(
+            `SELECT v.id as veiculo_id, v.modelo, v.marca, v.ano, v.preco, f.id as foto_id, f.mimetype, f.base64
+             FROM crm_veiculos v
+             JOIN crm_veiculos_fotos f ON f.veiculo_id = v.id
+             WHERE v.ativo = true
+             ORDER BY v.id, f.ordem ASC, f.id ASC`
+        ).catch(() => ({ rows: [] }));
+
+        res.json({ 
+            lead: lead.rows[0], 
+            historico: historico.rows, 
+            audios: audios.rows,
+            veiculosFotos: veiculosFotos.rows 
+        });
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Enviar mensagem de texto, imagem ou áudio direto pelo CRM para o WhatsApp
+app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId, nome: vendedorNome } = req.user;
+        const { telefone } = req.params;
+        const { texto, imagemBase64, audioBase64, mimeType } = req.body;
+        const telDecoded = decodeURIComponent(telefone);
+        const telClean = telDecoded.replace(/\D/g, '');
+
+        if (!texto && !imagemBase64 && !audioBase64) {
+            return res.status(400).json({ error: 'Mensagem vazia' });
+        }
+
+        const evoUrl = 'https://evolution.omelhorvendedoronline.com.br';
+        const evoKey = '2AEF40453FD5-4936-99E5-737323144E5C';
+        const evoInst = 'O%20melhor%20vendedor%20on-line%20IAGO';
+
+        // 1. Enviar texto
+        if (texto && !imagemBase64 && !audioBase64) {
+            const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+                method: 'POST',
+                headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number: telClean, text: texto })
+            });
+            if (!evoRes.ok) {
+                const errTxt = await evoRes.text();
+                console.error('Erro Evolution sendText:', errTxt);
+            }
+
+            await activePool.query(`
+                INSERT INTO n8n_historico_mensagens (session_id, message, created_at)
+                VALUES ($1, $2, NOW())
+            `, [telClean, JSON.stringify({
+                type: 'ai',
+                content: texto,
+                sender: 'vendedor',
+                vendedor_nome: vendedorNome
+            })]);
+        }
+
+        // 2. Enviar imagem
+        if (imagemBase64) {
+            const cleanB64 = imagemBase64.replace(/^data:[^;]+;base64,/, '');
+            const evoRes = await fetch(`${evoUrl}/message/sendMedia/${evoInst}`, {
+                method: 'POST',
+                headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: telClean,
+                    mediatype: 'image',
+                    mimetype: mimeType || 'image/jpeg',
+                    caption: texto || undefined,
+                    media: cleanB64,
+                    fileName: 'imagem.jpg'
+                })
+            });
+            if (!evoRes.ok) {
+                const errTxt = await evoRes.text();
+                console.error('Erro Evolution sendMedia:', errTxt);
+            }
+
+            await activePool.query(`
+                INSERT INTO n8n_historico_mensagens (session_id, message, created_at)
+                VALUES ($1, $2, NOW())
+            `, [telClean, JSON.stringify({
+                type: 'ai',
+                content: texto || '📷 Imagem enviada',
+                media_type: 'image',
+                base64: cleanB64,
+                mimetype: mimeType || 'image/jpeg',
+                sender: 'vendedor',
+                vendedor_nome: vendedorNome
+            })]);
+        }
+
+        // 3. Enviar áudio de voz
+        if (audioBase64) {
+            const cleanB64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
+            const evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
+                method: 'POST',
+                headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    number: telClean,
+                    audio: cleanB64
+                })
+            });
+            if (!evoRes.ok) {
+                const errTxt = await evoRes.text();
+                console.error('Erro Evolution sendWhatsAppAudio:', errTxt);
+            }
+
+            await activePool.query(`
+                INSERT INTO crm_mensagens_audios (telefone, tipo, base64, criado_em)
+                VALUES ($1, 'outgoing', $2, NOW())
+            `, [telClean, cleanB64]);
+
+            await activePool.query(`
+                INSERT INTO n8n_historico_mensagens (session_id, message, created_at)
+                VALUES ($1, $2, NOW())
+            `, [telClean, JSON.stringify({
+                type: 'ai',
+                content: '🎙️ Mensagem de áudio de voz enviada',
+                media_type: 'audio',
+                base64: cleanB64,
+                sender: 'vendedor',
+                vendedor_nome: vendedorNome
+            })]);
+        }
+
+        // Atualizar última interação do lead
+        await activePool.query(`
+            UPDATE crm_leads 
+            SET ultima_interacao = NOW() 
+            WHERE loja_id = $1 AND (telefone = $2 OR telefone = $3)
+        `, [lojaId, telDecoded, telClean]);
+
+        res.json({ ok: true });
+    } catch (e) {
+        console.error('Erro ao enviar mensagem:', e);
         res.status(500).json({ error: e.message });
     }
 });
