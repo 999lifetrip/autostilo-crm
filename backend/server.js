@@ -435,7 +435,7 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
         // 3. Enviar áudio de voz
         if (audioBase64) {
             const cleanB64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
-            const evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
+            let evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
                 method: 'POST',
                 headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -443,9 +443,21 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
                     audio: cleanB64
                 })
             });
+
             if (!evoRes.ok) {
                 const errTxt = await evoRes.text();
-                console.error('Erro Evolution sendWhatsAppAudio:', errTxt);
+                console.warn('sendWhatsAppAudio retorno:', errTxt, 'Tentando sendMedia...');
+                evoRes = await fetch(`${evoUrl}/message/sendMedia/${evoInst}`, {
+                    method: 'POST',
+                    headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        number: telClean,
+                        mediatype: 'audio',
+                        mimetype: mimeType || 'audio/ogg; codecs=opus',
+                        media: cleanB64,
+                        fileName: 'audio.ogg'
+                    })
+                });
             }
 
             await activePool.query(`
