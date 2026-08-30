@@ -701,14 +701,29 @@ function clearImagePreview() {
 }
 
 // ─── Gravação de Áudio de Voz (Microfone) ───────────────────────
+let currentRecordedMime = 'audio/webm;codecs=opus';
+
 document.getElementById('btnRecordAudio').addEventListener('click', async () => {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        
+        let mimeType = 'audio/webm;codecs=opus';
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            mimeType = 'audio/ogg;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+        }
+        currentRecordedMime = mimeType;
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
         audioChunks = [];
 
         mediaRecorder.ondataavailable = evt => {
-            if (evt.data.size > 0) audioChunks.push(evt.data);
+            if (evt.data && evt.data.size > 0) {
+                audioChunks.push(evt.data);
+            }
         };
 
         mediaRecorder.onstart = () => {
@@ -725,7 +740,7 @@ document.getElementById('btnRecordAudio').addEventListener('click', async () => 
             }, 1000);
         };
 
-        mediaRecorder.start();
+        mediaRecorder.start(200); // grava blocos a cada 200ms
     } catch (e) {
         toast('Não foi possível acessar o microfone: ' + e.message, 'error');
     }
@@ -755,9 +770,30 @@ document.getElementById('btnSendRec').addEventListener('click', async () => {
         recordTimerInterval = null;
     }
 
+    // Solicitar último chunk antes de fechar
+    if (mediaRecorder.state === 'recording') {
+        mediaRecorder.requestData();
+    }
+
     mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' });
         mediaRecorder.stream.getTracks().forEach(t => t.stop());
+
+        if (!audioChunks.length) {
+            toast('Nenhum áudio gravado.', 'error');
+            cancelAudioRecording();
+            return;
+        }
+
+        const audioBlob = new Blob(audioChunks, { type: currentRecordedMime });
+        audioChunks = [];
+
+        document.getElementById('recordingBar').classList.add('hidden');
+        document.getElementById('chatInputBar').classList.remove('hidden');
+
+        if (audioBlob.size < 500) {
+            toast('Áudio muito curto.', 'warning');
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = async evt => {
@@ -766,18 +802,18 @@ document.getElementById('btnSendRec').addEventListener('click', async () => {
                 const tel = encodeURIComponent(currentLeadData.telefone);
                 await api(`/leads/${tel}/mensagem`, {
                     method: 'POST',
-                    body: JSON.stringify({ audioBase64: b64 }),
+                    body: JSON.stringify({ 
+                        audioBase64: b64,
+                        mimeType: currentRecordedMime
+                    }),
                 });
-                toast('Áudio enviado com sucesso!');
+                toast('Áudio de voz enviado no WhatsApp!');
                 await fetchAndRenderLead(tel, false);
             } catch (err) {
                 toast('Erro ao enviar áudio: ' + err.message, 'error');
             }
         };
         reader.readAsDataURL(audioBlob);
-
-        document.getElementById('recordingBar').classList.add('hidden');
-        document.getElementById('chatInputBar').classList.remove('hidden');
     };
 
     mediaRecorder.stop();
