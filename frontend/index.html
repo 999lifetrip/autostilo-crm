@@ -578,18 +578,48 @@
                     </div>
                     <button class="btn btn-primary btn-full" id="btnSalvarLead">💾 Salvar Lead</button>
 
-                    <div class="modal-section mt-md">
-                        <h4>Enviar Mensagem no WhatsApp</h4>
-                        <div class="msg-input-wrapper">
-                            <textarea id="msgManualInput" class="form-control form-textarea-sm" placeholder="Digite a mensagem para o cliente..."></textarea>
-                            <button class="btn btn-secondary" id="btnEnviarMsg">Enviar WhatsApp ↗</button>
-                        </div>
-                    </div>
                 </div>
-                <div class="modal-col modal-col-right">
-                    <h4>Histórico da Conversa WhatsApp</h4>
+                <div class="modal-col modal-col-right modal-chat-col">
+                    <div class="chat-header-bar">
+                        <h4>💬 Conversa WhatsApp</h4>
+                        <span class="chat-live-indicator"><span class="live-dot"></span> Ao Vivo</span>
+                    </div>
                     <div class="chat-view" id="chatView">
                         <div class="chat-loading">Carregando conversa...</div>
+                    </div>
+
+                    <!-- Imagem Preview antes de enviar -->
+                    <div id="imagePreviewContainer" class="image-preview-container hidden">
+                        <div class="preview-img-wrap">
+                            <img id="imagePreviewImg" src="" alt="Preview">
+                            <button type="button" id="btnRemoveImagePreview" class="btn-remove-preview">✕</button>
+                        </div>
+                        <span class="preview-hint">Pronto para enviar com legenda ou direto</span>
+                    </div>
+
+                    <!-- Barra de Gravação de Áudio -->
+                    <div id="recordingBar" class="recording-bar hidden">
+                        <div class="recording-indicator">
+                            <span class="rec-dot"></span>
+                            <span>Gravando áudio de voz: <strong id="recTimer">0:00</strong></span>
+                        </div>
+                        <div class="recording-actions">
+                            <button type="button" class="btn-rec-cancel" id="btnCancelRec">✕ Cancelar</button>
+                            <button type="button" class="btn-rec-send" id="btnSendRec">➤ Enviar Áudio</button>
+                        </div>
+                    </div>
+
+                    <!-- Barra de Envio WhatsApp -->
+                    <div class="chat-input-bar" id="chatInputBar">
+                        <input type="file" id="chatFileInput" accept="image/*" class="hidden">
+                        <button type="button" class="chat-action-btn" id="btnAttachImage" title="Enviar Foto">📸</button>
+                        
+                        <div class="chat-input-wrapper">
+                            <textarea id="msgManualInput" class="chat-textarea" placeholder="Digite uma mensagem... (Enter envia, Shift+Enter pula linha)" rows="1"></textarea>
+                        </div>
+                        
+                        <button type="button" class="chat-action-btn btn-mic" id="btnRecordAudio" title="Gravar Áudio de Voz">🎙️</button>
+                        <button type="button" class="btn-send-msg" id="btnEnviarMsg" title="Enviar Mensagem">➤</button>
                     </div>
                 </div>
             </div>
