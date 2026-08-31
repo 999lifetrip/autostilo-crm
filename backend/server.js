@@ -400,7 +400,7 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
 
         // 2. Enviar imagem
         if (imagemBase64) {
-            const cleanB64 = imagemBase64.replace(/^data:[^;]+;base64,/, '');
+            const cleanB64 = imagemBase64.includes(';base64,') ? imagemBase64.split(';base64,').pop() : imagemBase64;
             const evoRes = await fetch(`${evoUrl}/message/sendMedia/${evoInst}`, {
                 method: 'POST',
                 headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
@@ -434,7 +434,7 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
 
         // 3. Enviar áudio de voz
         if (audioBase64) {
-            const cleanB64 = audioBase64.replace(/^data:[^;]+;base64,/, '');
+            const cleanB64 = audioBase64.includes(';base64,') ? audioBase64.split(';base64,').pop() : audioBase64;
             let evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
                 method: 'POST',
                 headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
@@ -473,6 +473,7 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
                 content: '🎙️ Mensagem de áudio de voz enviada',
                 media_type: 'audio',
                 base64: cleanB64,
+                mimetype: mimeType || 'audio/webm',
                 sender: 'vendedor',
                 vendedor_nome: vendedorNome
             })]);
