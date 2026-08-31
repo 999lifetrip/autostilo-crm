@@ -2425,3 +2425,268 @@ input:checked + .toggle-slider:before {
     cursor: not-allowed;
     transform: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVIDADE COMPLETA & MOBILE OPTIMIZATION
+═══════════════════════════════════════════════════════════════ */
+
+/* Backdrop para fechar o menu no celular */
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.sidebar-backdrop.active {
+    display: block;
+    opacity: 1;
+}
+
+/* Tablets e Telas Médias (<= 1024px) */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .dashboard-two-col {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-two-col {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-col-left {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+}
+
+/* Celulares e Telas Menores (<= 768px) */
+@media (max-width: 768px) {
+    html {
+        font-size: 14px;
+    }
+
+    body {
+        overflow-x: hidden;
+    }
+
+    /* Sidebar Flutuante tipo Gaveta */
+    .sidebar {
+        transform: translateX(-100%);
+        width: 270px;
+        z-index: 1000;
+        box-shadow: 10px 0 35px rgba(0, 0, 0, 0.85);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Main ocupa 100% da tela */
+    .main {
+        margin-left: 0 !important;
+        width: 100% !important;
+        min-width: 0;
+    }
+
+    /* Header Mobile */
+    .header {
+        padding: 0 1rem;
+        gap: 0.6rem;
+    }
+
+    .btn-menu-toggle {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 1.25rem;
+    }
+
+    .header-title {
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .header-time {
+        display: none;
+    }
+
+    .status-pill {
+        padding: 0.25rem 0.55rem;
+        font-size: 0.68rem;
+    }
+
+    /* Páginas e Espaçamento */
+    .page {
+        padding: 0.85rem;
+    }
+
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    .page-header h2 {
+        font-size: 1.15rem;
+    }
+
+    .dash-quick-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem;
+    }
+
+    /* Grid de Estatísticas */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.5rem;
+    }
+
+    .stat-card.stat-compact {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .stat-value {
+        font-size: 1.2rem;
+    }
+
+    /* Kanban Horizontal Touch Scroll */
+    .kanban-board {
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        gap: 0.75rem;
+        padding-bottom: 0.85rem;
+        margin: 0 -0.85rem;
+        padding-left: 0.85rem;
+        padding-right: 0.85rem;
+    }
+
+    .kanban-col {
+        min-width: 275px;
+        max-width: 275px;
+        flex-shrink: 0;
+        scroll-snap-align: start;
+    }
+
+    /* Cards e Estoque */
+    .cards-grid,
+    .estoque-cards-grid,
+    .estoque-grid {
+        grid-template-columns: 1fr !important;
+        gap: 0.75rem;
+    }
+
+    /* Modal do Lead & Chat no Celular */
+    .modal {
+        padding: 0;
+        align-items: flex-end;
+    }
+
+    .modal-box.modal-large,
+    .modal-box {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        max-height: 94vh !important;
+        margin: 0 !important;
+        border-radius: 18px 18px 0 0 !important;
+        border-bottom: none !important;
+    }
+
+    .modal-header {
+        padding: 0.9rem 1rem;
+    }
+
+    .modal-avatar {
+        width: 2.6rem;
+        height: 2.6rem;
+        font-size: 1rem;
+    }
+
+    .modal-two-col {
+        grid-template-columns: 1fr !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .modal-col {
+        padding: 1rem !important;
+    }
+
+    .modal-chat-col {
+        height: 460px !important;
+        padding: 0.75rem !important;
+    }
+
+    .chat-view {
+        height: 300px;
+        padding: 0.5rem;
+    }
+
+    .chat-bubble {
+        max-width: 90%;
+        font-size: 0.82rem;
+    }
+
+    .chat-input-bar {
+        padding: 0.25rem 0.4rem;
+        gap: 0.25rem;
+    }
+
+    .chat-action-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 1rem;
+    }
+
+    .btn-send-msg {
+        width: 34px;
+        height: 34px;
+        font-size: 0.9rem;
+    }
+
+    /* Login Card */
+    .login-card {
+        max-width: 92vw;
+        padding: 2rem 1.25rem;
+        border-radius: 16px;
+    }
+
+    .brand-title {
+        font-size: 1.6rem;
+    }
+}
+
+/* Telas Pequenas (<= 400px) */
+@media (max-width: 400px) {
+    .stats-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .etiqueta-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chat-gallery {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
