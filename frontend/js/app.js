@@ -201,13 +201,29 @@ function navigate(rawKey) {
     if (key === 'iaEditor') loadIaPrompt();
 }
 
+function closeMobileSidebar() {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.getElementById('sidebarBackdrop')?.classList.remove('active');
+}
+
+function toggleMobileSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (sidebar) {
+        const isOpen = sidebar.classList.toggle('open');
+        backdrop?.classList.toggle('active', isOpen);
+    }
+}
+
 document.querySelectorAll('.nav-item').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
+    btn.addEventListener('click', () => {
+        navigate(btn.dataset.page);
+        closeMobileSidebar();
+    });
 });
 
-document.getElementById('btnMenuToggle').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('open');
-});
+document.getElementById('btnMenuToggle')?.addEventListener('click', toggleMobileSidebar);
+document.getElementById('sidebarBackdrop')?.addEventListener('click', closeMobileSidebar);
 
 // ─── Dashboard ─────────────────────────────────────────────────
 async function loadDashboard() {
