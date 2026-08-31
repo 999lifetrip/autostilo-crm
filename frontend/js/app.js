@@ -606,7 +606,17 @@ function renderChat(historico = [], audios = [], veiculosFotos = [], isFirstLoad
         }
 
         // Áudio anexado
-        const audioItem = audioMap.get(row.id_mensagem) || audioMap.get(row.id) || (msgObj.base64 && msgObj.media_type === 'audio' ? { base64: msgObj.base64 } : null);
+        const audioItem = audioMap.get(row.id_mensagem) || audioMap.get(row.id) || (msgObj.base64 && msgObj.media_type === 'audio' ? { base64: msgObj.base64, mimetype: msgObj.mimetype } : null);
+        let audioSrc = '';
+        if (audioItem && audioItem.base64) {
+            const raw = audioItem.base64;
+            if (raw.startsWith('data:audio/')) {
+                audioSrc = raw;
+            } else {
+                const mime = audioItem.mimetype || (raw.startsWith('GkX') ? 'audio/webm' : 'audio/ogg');
+                audioSrc = `data:${mime};base64,${raw}`;
+            }
+        }
         const time = row.created_at ? new Date(row.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 
         let senderLabel = isHuman ? '👤 Cliente' : (isVendedor ? `👨‍💼 Vendedor (${msgObj.vendedor_nome || 'Você'})` : '🤖 Iago (IA)');
@@ -615,10 +625,10 @@ function renderChat(historico = [], audios = [], veiculosFotos = [], isFirstLoad
         return `<div class="chat-bubble ${bubbleClass}">
             <div class="chat-bubble-sender">${senderLabel}</div>
             ${singleImgHtml}
-            ${audioItem ? `
+            ${audioSrc ? `
                 <div class="chat-audio-player-wrap">
                     <div class="chat-audio-pill">🎙️ Áudio de Voz</div>
-                    <audio controls class="chat-audio-el" src="data:audio/ogg;base64,${audioItem.base64}"></audio>
+                    <audio controls class="chat-audio-el" src="${audioSrc}"></audio>
                 </div>
             ` : ''}
             ${text && (!singleImgHtml || text !== '📷 Imagem enviada') ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : ''}
