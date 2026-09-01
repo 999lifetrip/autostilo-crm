@@ -80,6 +80,11 @@
                     <span class="nav-label">Editor do Robô</span>
                     <span class="nav-badge" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size:0.65rem;">IAGO</span>
                 </button>
+                <button class="nav-item" data-page="remarketing" id="navRemarketing">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-label">Remarketing</span>
+                    <span class="nav-badge" style="background: #10b981; color: #02180e; font-size:0.65rem;">3h/6h/12h</span>
+                </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
                     <span class="nav-icon">🏎️</span>
                     <span class="nav-label">Vendedores</span>
@@ -268,8 +273,13 @@
                         <div>
                             <h2>Anúncio / Estoque</h2>
                             <span class="page-subtitle">Cadastre carros e fotos diretamente no CRM para o Iago enviar aos clientes (Fotos do anúncio ou fotos do estoque completo)</span>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <button class="btn btn-secondary" id="btnSyncRevendaMais" title="Importar automaticamente carros e fotos da RevendaMais">
+                                <span id="btnSyncText">🔄 Sincronizar RevendaMais</span>
+                                <span id="btnSyncSpinner" class="spinner-small hidden"></span>
+                            </button>
+                            <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Cadastrar Carro</button>
                         </div>
-                        <button class="btn btn-primary" id="btnNovoVeiculo">🚗 + Cadastrar Carro</button>
                     </div>
 
                     <div class="filters-bar">
@@ -533,6 +543,56 @@
 
                     <div class="cards-grid" id="equipeGrid">
                         <div class="loading-placeholder">Carregando equipe...</div>
+                    </div>
+                </div>
+
+                <!-- ── REMARKETING PAGE (3h, 6h, 12h) ── -->
+                <div class="page" id="pageRemarketing">
+                    <div class="page-header">
+                        <div>
+                            <h2>🎯 Motor de Remarketing Inteligente (Anti-Vácuo)</h2>
+                            <span class="page-subtitle">Reengaje automaticamente leads que pararam de responder após 3h, 6h e 12h</span>
+                        </div>
+                        <div class="page-header-actions">
+                            <button class="btn btn-primary" id="btnExecutarRemarketingAgora">
+                                <span id="btnExecutarRemarketingText">⚡ Executar Remarketing Agora</span>
+                                <span id="btnExecutarRemarketingSpinner" class="spinner-small hidden"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3 Cards de Etapas 3h, 6h, 12h -->
+                    <div class="cards-grid" id="remarketingConfigGrid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+                        <div class="loading-placeholder">Carregando regras de remarketing...</div>
+                    </div>
+
+                    <!-- Histórico de Disparos de Remarketing -->
+                    <div class="card mt-md">
+                        <div class="card-header" style="justify-content: space-between;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <h3>📋 Histórico de Disparos Recentes</h3>
+                                <span class="badge-pill-brand" id="remarketingTotalCount">0 disparos</span>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" id="btnAtualizarHistoricoRemarketing">🔄 Atualizar Fila</button>
+                        </div>
+                        <div class="table-card" style="border:none; box-shadow:none;">
+                            <table class="data-table" id="remarketingTable">
+                                <thead>
+                                    <tr>
+                                        <th>Lead / Telefone</th>
+                                        <th>Etapa</th>
+                                        <th>Mensagem Enviada</th>
+                                        <th>Horário do Envio</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="remarketingTableBody">
+                                    <tr>
+                                        <td colspan="5" class="table-loading">Carregando histórico...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
