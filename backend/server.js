@@ -1488,6 +1488,282 @@ app.post('/api/ia/chat-treinador/limpar', authMiddleware, async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// ─── REVENDA MAIS & REMARKETING AUTOMÁTICO (3h, 6h, 12h) ──────
+// ═══════════════════════════════════════════════════════════════
+
+// Sincronização Automática com RevendaMais
+async function executeRevendaMaisSync(lojaId = 1) {
+    const url = 'http://app.revendamais.com.br/application/index.php/apiGeneratorXml/generator/sitedaloja/f4bce1c1f065689923fc9dc9ab99cf426839.xml';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Falha ao buscar XML da RevendaMais: ${res.statusText}`);
+    const xml = await res.text();
+    const ads = xml.split(/<AD>([\s\S]*?)<\/AD>/g).filter((_, i) => i % 2 === 1);
+
+    let syncedCars = 0;
+    let newPhotos = 0;
+
+    for (const ad of ads) {
+        const getTag = tag => {
+            const m = ad.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+            return m ? m[1].trim() : '';
+        };
+
+        const make = getTag('MAKE');
+        const model = getTag('MODEL');
+        const year = parseInt(getTag('YEAR')) || 2020;
+        const price = parseFloat(getTag('PRICE')) || 0;
+        const color = getTag('COLOR') || 'Não informada';
+        const mileage = parseInt(getTag('MILEAGE')) || 0;
+        const gear = getTag('GEAR') || 'Manual';
+        const fuel = getTag('FUEL') || 'Flex';
+        const opc = getTag('ACCESSORIES') || '';
+
+        const images = [];
+        const imgMatches = ad.match(/<IMAGE_URL>([\s\S]*?)<\/IMAGE_URL>/gi) || [];
+        imgMatches.forEach(im => {
+            const urlMatch = im.match(/<IMAGE_URL>([\s\S]*?)<\/IMAGE_URL>/i);
+            if (urlMatch && urlMatch[1].trim()) images.push(urlMatch[1].trim());
+        });
+
+        // Somente veículos com foto
+        if (images.length === 0) continue;
+
+        const modeloCapitalizado = model.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        const marcaCapitalizada = make.charAt(0).toUpperCase() + make.slice(1).toLowerCase();
+
+        const check = await activePool.query(
+            `SELECT id FROM crm_veiculos WHERE LOWER(marca) = LOWER($1) AND LOWER(modelo) = LOWER($2) AND ano = $3`,
+            [marcaCapitalizada, modeloCapitalizado, year]
+        );
+
+        let veiculoId;
+        if (check.rows.length > 0) {
+            veiculoId = check.rows[0].id;
+            await activePool.query(
+                `UPDATE crm_veiculos SET preco = $1, km = $2, cor = $3, cambio = $4, combustivel = $5, ativo = true, atualizado_em = NOW() WHERE id = $6`,
+                [price, mileage, color, gear, fuel, veiculoId]
+            );
+        } else {
+            const insert = await activePool.query(
+                `INSERT INTO crm_veiculos (loja_id, marca, modelo, ano, preco, km, cor, cambio, combustivel, opcionais, diferenciais, destaque, ativo, criado_em, atualizado_em)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, true, NOW(), NOW()) RETURNING id`,
+                [
+                    lojaId,
+                    marcaCapitalizada,
+                    modeloCapitalizado,
+                    year,
+                    price,
+                    mileage,
+                    color,
+                    gear,
+                    fuel,
+                    opc || 'Direção elétrica, Ar-condicionado, Vidros elétricos, Travas',
+                    'Revisado, Documentação em dia, Com laudo cautelar aprovado, Garantia de 3 meses'
+                ]
+            );
+            veiculoId = insert.rows[0].id;
+            syncedCars++;
+        }
+
+        const existingPhotos = await activePool.query(`SELECT count(*) as count FROM crm_veiculos_fotos WHERE veiculo_id = $1`, [veiculoId]);
+        if (parseInt(existingPhotos.rows[0].count) === 0) {
+            let ordem = 1;
+            for (const imgUrl of images) {
+                try {
+                    const imgRes = await fetch(imgUrl);
+                    if (imgRes.ok) {
+                        const arrayBuf = await imgRes.arrayBuffer();
+                        const b64 = Buffer.from(arrayBuf).toString('base64');
+                        await activePool.query(
+                            `INSERT INTO crm_veiculos_fotos (veiculo_id, nome_arquivo, mimetype, base64, ordem, criado_em)
+                             VALUES ($1, $2, 'image/jpeg', $3, $4, NOW())`,
+                            [veiculoId, `foto_${ordem}.jpg`, b64, ordem]
+                        );
+                        newPhotos++;
+                        ordem++;
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    return { total_veiculos: ads.length, novos_veiculos: syncedCars, novas_fotos: newPhotos };
+}
+
+// Endpoint de sincronização manual com RevendaMais
+app.post('/api/veiculos/sync-revendamais', authMiddleware, async (req, res) => {
+    try {
+        const resultado = await executeRevendaMaisSync(req.user.lojaId);
+        res.json({ ok: true, resultado });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── Motor de Remarketing (3h, 6h, 12h) ─────────────────────────
+async function processRemarketing() {
+    if (!activePool) return;
+
+    try {
+        // Horário comercial brasileiro (08:30 às 20:30)
+        const now = new Date();
+        const hour = (now.getUTCHours() - 3 + 24) % 24;
+        const min = now.getUTCMinutes();
+        if (hour < 8 || (hour === 8 && min < 30) || hour >= 21) {
+            return 0; // fora do horário comercial
+        }
+
+        const regrasRes = await activePool.query(`SELECT * FROM crm_remarketing_config WHERE ativo = true ORDER BY etapa ASC`);
+        if (regrasRes.rows.length === 0) return 0;
+
+        const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
+        const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
+        const evoInst = process.env.EVOLUTION_INSTANCE || 'O%20melhor%20vendedor%20on-line%20IAGO';
+
+        let totalEnviados = 0;
+
+        for (const regra of regrasRes.rows) {
+            const { etapa, horas, mensagem: template } = regra;
+
+            const leads = await activePool.query(`
+                SELECT l.id, l.telefone, l.nome, l.etiqueta, l.ultima_interacao, l.anotacoes,
+                       COALESCE(v.modelo, 'carro') as carro_nome
+                FROM crm_leads l
+                LEFT JOIN crm_veiculos v ON l.anotacoes ILIKE '%' || v.modelo || '%'
+                WHERE l.etiqueta NOT IN ('fechou', 'perdeu')
+                  AND l.ultima_interacao <= NOW() - ($1 || ' hours')::INTERVAL
+                  AND l.ultima_interacao >= NOW() - (($1 + 36) || ' hours')::INTERVAL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM crm_remarketing_envios e 
+                      WHERE e.telefone = l.telefone AND e.etapa = $2
+                  )
+                LIMIT 15
+            `, [horas, etapa]);
+
+            for (const lead of leads.rows) {
+                const telClean = lead.telefone.replace(/\D/g, '');
+                if (!telClean || telClean.length < 10) continue;
+
+                // Verificar última mensagem do histórico
+                const lastMsg = await activePool.query(`
+                    SELECT message FROM n8n_historico_mensagens 
+                    WHERE session_id = $1 ORDER BY id DESC LIMIT 1
+                `, [telClean]);
+
+                if (lastMsg.rows.length > 0) {
+                    let m = lastMsg.rows[0].message;
+                    if (typeof m === 'string') { try { m = JSON.parse(m); } catch {} }
+                    const sender = m.sender || (m.type === 'human' ? 'user' : 'bot');
+                    if (sender === 'user') {
+                        continue; // Cliente respondeu recentemente
+                    }
+                }
+
+                const primeiroNome = (lead.nome || 'amigo').split(' ')[0];
+                const textoFinal = template
+                    .replace(/{nome}/gi, primeiroNome)
+                    .replace(/{carro}/gi, lead.carro_nome || 'veículo');
+
+                const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+                    method: 'POST',
+                    headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        number: telClean,
+                        text: textoFinal
+                    })
+                });
+
+                if (evoRes.ok) {
+                    await activePool.query(`
+                        INSERT INTO crm_remarketing_envios (telefone, lead_id, nome_cliente, etapa, horas, mensagem, status, enviado_em)
+                        VALUES ($1, $2, $3, $4, $5, $6, 'enviado', NOW())
+                    `, [telClean, lead.id, lead.nome, etapa, horas, textoFinal]);
+
+                    await activePool.query(`
+                        INSERT INTO n8n_historico_mensagens (session_id, message, created_at)
+                        VALUES ($1, $2, NOW())
+                    `, [telClean, JSON.stringify({
+                        type: 'ai',
+                        content: textoFinal,
+                        sender: 'iago_remarketing',
+                        etapa_remarketing: etapa,
+                        vendedor_nome: `Iago (Remarketing ${horas}h)`
+                    })]);
+
+                    totalEnviados++;
+                    console.log(`[Remarketing ${horas}h] Enviado para ${lead.nome} (${telClean})`);
+                }
+            }
+        }
+
+        return totalEnviados;
+    } catch (e) {
+        console.error('Erro no loop de remarketing:', e.message);
+        return 0;
+    }
+}
+
+// Obter configurações das etapas de remarketing
+app.get('/api/remarketing/config', authMiddleware, async (req, res) => {
+    try {
+        const result = await activePool.query(`SELECT * FROM crm_remarketing_config ORDER BY etapa ASC`);
+        res.json({ ok: true, regras: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Atualizar regra de remarketing
+app.patch('/api/remarketing/config/:etapa', authMiddleware, async (req, res) => {
+    try {
+        const { etapa } = req.params;
+        const { ativo, mensagem, titulo, horas } = req.body;
+        await activePool.query(`
+            UPDATE crm_remarketing_config 
+            SET ativo = COALESCE($1, ativo),
+                mensagem = COALESCE($2, mensagem),
+                titulo = COALESCE($3, titulo),
+                horas = COALESCE($4, horas),
+                atualizado_em = NOW()
+            WHERE etapa = $5
+        `, [ativo, mensagem, titulo, horas, etapa]);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Obter histórico de disparos de remarketing
+app.get('/api/remarketing/historico', authMiddleware, async (req, res) => {
+    try {
+        const result = await activePool.query(`
+            SELECT e.*, l.nome as lead_nome, l.etiqueta
+            FROM crm_remarketing_envios e
+            LEFT JOIN crm_leads l ON l.telefone = e.telefone
+            ORDER BY e.id DESC
+            LIMIT 60
+        `);
+        res.json({ ok: true, historico: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Disparo manual/imediato do motor de remarketing
+app.post('/api/remarketing/executar-agora', authMiddleware, async (req, res) => {
+    try {
+        const total = await processRemarketing();
+        res.json({ ok: true, disparados: total });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Iniciar worker de remarketing a cada 10 minutos
+setInterval(processRemarketing, 10 * 60 * 1000);
+
 app.get('/api/health', (req, res) => res.json({
     status: 'ok',
     db_connected: dbConnected,
