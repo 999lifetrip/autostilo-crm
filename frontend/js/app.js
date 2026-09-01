@@ -201,6 +201,7 @@ function navigate(rawKey) {
     if (key === 'dashboard') loadDashboard();
     if (key === 'iaEditor') loadIaPrompt();
     if (key === 'remarketing') loadRemarketing();
+    if (key === 'equipe') loadUsuarios();
 }
 
 function closeMobileSidebar() {
