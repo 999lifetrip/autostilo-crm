@@ -1527,8 +1527,8 @@ async function executeRevendaMaisSync(lojaId = 1) {
             if (urlMatch && urlMatch[1].trim()) images.push(urlMatch[1].trim());
         });
 
-        // Somente veículos com foto
-        if (images.length === 0) continue;
+        // Somente veículos com fotos reais (ignora carros em preparação com 1 foto placeholder)
+        if (images.length <= 1) continue;
 
         const modeloCapitalizado = model.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         const marcaCapitalizada = make.charAt(0).toUpperCase() + make.slice(1).toLowerCase();
