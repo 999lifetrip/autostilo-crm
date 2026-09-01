@@ -176,6 +176,7 @@ const pages = {
     leads: { page: 'pageLeads', title: 'WhatsApp', nav: 'navLeads' },
     veiculos: { page: 'pageVeiculos', title: 'Anúncio / Estoque', nav: 'navVeiculos' },
     iaEditor: { page: 'pageIaEditor', title: 'Editor do Robô', nav: 'navIaEditor' },
+    remarketing: { page: 'pageRemarketing', title: '🎯 Motor de Remarketing (3h, 6h, 12h)', nav: 'navRemarketing' },
     equipe: { page: 'pageEquipe', title: 'Vendedores', nav: 'navEquipe' },
 };
 
@@ -199,6 +200,7 @@ function navigate(rawKey) {
     if (key === 'leads') loadLeads();
     if (key === 'dashboard') loadDashboard();
     if (key === 'iaEditor') loadIaPrompt();
+    if (key === 'remarketing') loadRemarketing();
 }
 
 function closeMobileSidebar() {
@@ -1873,6 +1875,166 @@ document.getElementById('btnRestaurarPadrao')?.addEventListener('click', async (
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ─── REVENDA MAIS & REMARKETING AUTOMÁTICO (3h, 6h, 12h) ──────
+// ═══════════════════════════════════════════════════════════════
+
+// Sincronizar com RevendaMais
+document.getElementById('btnSyncRevendaMais')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnSyncRevendaMais');
+    const txt = document.getElementById('btnSyncText');
+    const spin = document.getElementById('btnSyncSpinner');
+
+    txt.textContent = 'Sincronizando...';
+    spin?.classList.remove('hidden');
+    btn.disabled = true;
+
+    try {
+        const res = await api('/veiculos/sync-revendamais', { method: 'POST' });
+        toast(`🎉 Sincronização concluída! ${res.resultado?.novas_fotos || 0} novas fotos baixadas.`);
+        await loadVeiculos();
+    } catch (e) {
+        toast('Erro ao sincronizar com RevendaMais: ' + e.message, 'error');
+    } finally {
+        txt.textContent = '🔄 Sincronizar RevendaMais';
+        spin?.classList.add('hidden');
+        btn.disabled = false;
+    }
+});
+
+// Carregar tela de Remarketing
+async function loadRemarketing() {
+    const configGrid = document.getElementById('remarketingConfigGrid');
+    const tableBody = document.getElementById('remarketingTableBody');
+
+    try {
+        // 1. Carregar Configurações das 3 Etapas
+        const configRes = await api('/remarketing/config');
+        const regras = configRes.regras || [];
+
+        configGrid.innerHTML = regras.map(r => `
+            <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; background:#091a11; border:1px solid rgba(16,185,129,0.25);">
+                <div class="card-header" style="justify-content:space-between; padding:0.9rem 1.1rem;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <h3 style="font-size:0.92rem; font-weight:800; color:#fff;">${r.titulo}</h3>
+                    </div>
+                    <label class="toggle-switch" title="${r.ativo ? 'Etapa Ativa' : 'Etapa Pausada'}">
+                        <input type="checkbox" id="remarketingToggle_${r.etapa}" ${r.ativo ? 'checked' : ''} onchange="toggleRemarketingEtapa(${r.etapa}, this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="card-body" style="padding:1rem;">
+                    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.5rem;">
+                        ⏱️ Disparo após <strong>${r.horas} horas</strong> sem resposta do cliente.
+                    </div>
+                    <div class="form-group" style="margin-bottom:0.6rem;">
+                        <textarea id="remarketingMsg_${r.etapa}" class="form-control form-textarea-sm" style="font-size:0.84rem; line-height:1.45; min-height:85px; background:rgba(3,10,6,0.9);">${escapeHtml(r.mensagem)}</textarea>
+                    </div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+                        <div style="font-size:0.7rem; color:var(--brand-accent);">
+                            Tags: <code style="background:rgba(16,185,129,0.15); padding:2px 4px; border-radius:4px;">{nome}</code> <code style="background:rgba(16,185,129,0.15); padding:2px 4px; border-radius:4px;">{carro}</code>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="salvarRemarketingMensagem(${r.etapa})">💾 Salvar Mensagem</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        // 2. Carregar Histórico de Disparos
+        const histRes = await api('/remarketing/historico');
+        const historico = histRes.historico || [];
+        document.getElementById('remarketingTotalCount').textContent = `${historico.length} disparos recentes`;
+
+        if (historico.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="5" class="table-loading">Nenhum disparo de remarketing registrado recentemente.</td></tr>`;
+            return;
+        }
+
+        tableBody.innerHTML = historico.map(h => {
+            const dataHora = h.enviado_em ? new Date(h.enviado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            return `
+                <tr>
+                    <td>
+                        <strong style="color:#fff; cursor:pointer;" onclick="openLead('${encodeURIComponent(h.telefone)}')">${escapeHtml(h.nome_cliente || 'Cliente')}</strong>
+                        <div style="font-size:0.74rem; color:var(--text-muted);">${formatTel(h.telefone)}</div>
+                    </td>
+                    <td>
+                        <span class="badge-pill-brand" style="font-size:0.7rem;">Etapa ${h.etapa} (${h.horas}h)</span>
+                    </td>
+                    <td style="max-width:320px; font-size:0.8rem; color:#e2e8f0; line-height:1.35;">
+                        ${escapeHtml(h.mensagem)}
+                    </td>
+                    <td style="font-size:0.75rem; color:var(--text-secondary);">${dataHora}</td>
+                    <td>
+                        <span class="status-pill" style="font-size:0.68rem; background:rgba(16,185,129,0.15); color:#34d399; border-color:rgba(16,185,129,0.3);">
+                            ✓ Enviado
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (e) {
+        toast('Erro ao carregar dados de remarketing: ' + e.message, 'error');
+    }
+}
+
+// Salvar mensagem de uma etapa
+window.salvarRemarketingMensagem = async (etapa) => {
+    const textarea = document.getElementById(`remarketingMsg_${etapa}`);
+    if (!textarea) return;
+    const mensagem = textarea.value.trim();
+    if (!mensagem) return toast('A mensagem não pode ficar vazia.', 'warning');
+
+    try {
+        await api(`/remarketing/config/${etapa}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ mensagem })
+        });
+        toast(`Etapa ${etapa} atualizada com sucesso!`);
+    } catch (e) {
+        toast('Erro ao salvar etapa: ' + e.message, 'error');
+    }
+};
+
+// Alternar status ativo/inativo de uma etapa
+window.toggleRemarketingEtapa = async (etapa, ativo) => {
+    try {
+        await api(`/remarketing/config/${etapa}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ ativo })
+        });
+        toast(`Etapa ${etapa} ${ativo ? 'ativada' : 'pausada'}!`);
+    } catch (e) {
+        toast('Erro ao alterar status: ' + e.message, 'error');
+    }
+};
+
+// Executar remarketing manualmente agora
+document.getElementById('btnExecutarRemarketingAgora')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnExecutarRemarketingAgora');
+    const txt = document.getElementById('btnExecutarRemarketingText');
+    const spin = document.getElementById('btnExecutarRemarketingSpinner');
+
+    txt.textContent = 'Processando Fila...';
+    spin?.classList.remove('hidden');
+    btn.disabled = true;
+
+    try {
+        const res = await api('/remarketing/executar-agora', { method: 'POST' });
+        toast(`⚡ Remarketing executado com sucesso! ${res.disparados || 0} mensagens enviadas.`);
+        await loadRemarketing();
+    } catch (e) {
+        toast('Erro ao executar remarketing: ' + e.message, 'error');
+    } finally {
+        txt.textContent = '⚡ Executar Remarketing Agora';
+        spin?.classList.add('hidden');
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('btnAtualizarHistoricoRemarketing')?.addEventListener('click', loadRemarketing);
+
 // ─── Auto refresh ──────────────────────────────────────────────
 function startAutoRefresh() {
     if (refreshInterval) clearInterval(refreshInterval);
@@ -1880,6 +2042,7 @@ function startAutoRefresh() {
         const activePage = document.querySelector('.page.active');
         if (activePage?.id === 'pageDashboard') loadDashboard();
         if (activePage?.id === 'pageLeads') loadLeads();
+        if (activePage?.id === 'pageRemarketing') loadRemarketing();
     }, 30000);
 }
 
