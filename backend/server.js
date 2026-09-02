@@ -1226,6 +1226,43 @@ app.post('/api/ia/salvar', authMiddleware, async (req, res) => {
     }
 });
 
+// Helper para chamadas Gemini com fallback automático de modelos
+async function callGeminiAPI(promptText, isJson = true) {
+    const geminiKey = process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42SUZtX3VSSk54THZkeGR0VGY2bnd3OFoxYjJEckptR0ZOTjA2Q1g4R01Qa2c=', 'base64').toString('utf8');
+    const models = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+    let lastError = null;
+
+    for (const model of models) {
+        try {
+            const body = {
+                contents: [{ parts: [{ text: promptText }] }]
+            };
+            if (isJson) {
+                body.generationConfig = { responseMimeType: 'application/json' };
+            }
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) return text;
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                lastError = new Error(`Model ${model} status ${res.status}: ${errData.error?.message || res.statusText}`);
+                console.warn(`[Gemini] ${model} falhou:`, lastError.message);
+            }
+        } catch (err) {
+            lastError = err;
+            console.warn(`[Gemini] ${model} exceção:`, err.message);
+        }
+    }
+    throw lastError || new Error('Todos os modelos Gemini falharam');
+}
+
 // Refina o prompt com IA mantendo todas as regras
 app.post('/api/ia/refinar', authMiddleware, async (req, res) => {
     try {
@@ -1257,30 +1294,7 @@ REGRAS CRÍTICAS E INVIOLÁVEIS:
   "resumo_alteracoes": "Explicação em 2 ou 3 tópicos do que foi alterado e como as regras foram preservadas."
 }`;
 
-        const geminiKey = process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42SUZtX3VSSk54THZkeGR0VGY2bnd3OFoxYjJEckptR0ZOTjA2Q1g4R01Qa2c=', 'base64').toString('utf8');
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            { text: `${systemInstruction}\n\n=== SYSTEM PROMPT ATUAL ===\n${promptBase}\n\n=== SUGESTÃO DO GERENTE ===\n${sugestao}` }
-                        ]
-                    }
-                ],
-                generationConfig: {
-                    responseMimeType: 'application/json'
-                }
-            })
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-            return res.status(500).json({ error: 'Erro na API de IA', detail: data });
-        }
-
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const rawText = await callGeminiAPI(`${systemInstruction}\n\n=== SYSTEM PROMPT ATUAL ===\n${promptBase}\n\n=== SUGESTÃO DO GERENTE ===\n${sugestao}`, true);
         let parsed = {};
         try {
             parsed = JSON.parse(rawText);
@@ -1422,27 +1436,18 @@ Retorne SEMPRE em formato JSON estrito:
   "prompt_refinado": "System prompt completo e atualizado (se alterou_prompt for true, senão repita o atual)"
 }`;
 
-        const geminiKey = process.env.GEMINI_API_KEY || Buffer.from('QVEuQWI4Uk42SUZtX3VSSk54THZkeGR0VGY2bnd3OFoxYjJEckptR0ZOTjA2Q1g4R01Qa2c=', 'base64').toString('utf8');
         const contextPayload = `=== SYSTEM PROMPT ATUAL DO IAGO ===\n${currentPrompt}\n\n=== HISTÓRICO DA CONVERSA COM O GERENTE ===\n${recentChat.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}\n\nGERENTE: ${mensagem}`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemInstruction}\n\n${contextPayload}` }] }],
-                generationConfig: { responseMimeType: 'application/json' }
-            })
-        });
-
-        const data = await response.json();
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        let rawText = '{}';
         let parsed = {};
         try {
+            rawText = await callGeminiAPI(`${systemInstruction}\n\n${contextPayload}`, true);
             parsed = JSON.parse(rawText);
-        } catch {
+        } catch (geminiErr) {
+            console.error('[Chat Treinador] Erro no Gemini:', geminiErr);
             parsed = {
                 alterou_prompt: false,
-                resposta_chat: rawText || 'Entendido chefe!',
+                resposta_chat: 'Desculpe chefe! Tive uma oscilação temporária de conexão com o servidor de IA. Pode reenviar sua instrução que já aplico para você! 🤝',
                 resumo_ajuste: null,
                 prompt_refinado: currentPrompt
             };
