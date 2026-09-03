@@ -1608,20 +1608,21 @@ app.post('/api/veiculos/sync-revendamais', authMiddleware, async (req, res) => {
 });
 
 // ─── Motor de Remarketing (3h, 6h, 12h) ─────────────────────────
-async function processRemarketing() {
-    if (!activePool) return;
+async function processRemarketing(bypassHorario = false) {
+    if (!activePool) return { total: 0 };
 
     try {
         // Horário comercial brasileiro (08:30 às 20:30)
         const now = new Date();
         const hour = (now.getUTCHours() - 3 + 24) % 24;
         const min = now.getUTCMinutes();
-        if (hour < 8 || (hour === 8 && min < 30) || hour >= 21) {
-            return 0; // fora do horário comercial
+        if (!bypassHorario && (hour < 8 || (hour === 8 && min < 30) || hour >= 21)) {
+            console.log(`[Remarketing] Fora do horário comercial (${hour}h${min}). Disparos automáticos pausados até 08:30.`);
+            return { total: 0, foraHorario: true, msg: 'Fora do horário comercial (08:30 às 20:30)' };
         }
 
         const regrasRes = await activePool.query(`SELECT * FROM crm_remarketing_config WHERE ativo = true ORDER BY etapa ASC`);
-        if (regrasRes.rows.length === 0) return 0;
+        if (regrasRes.rows.length === 0) return { total: 0 };
 
         const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
         const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
@@ -1638,14 +1639,14 @@ async function processRemarketing() {
                 FROM crm_leads l
                 LEFT JOIN crm_veiculos v ON l.anotacoes ILIKE '%' || v.modelo || '%'
                 WHERE l.etiqueta NOT IN ('fechou', 'perdeu')
-                  AND l.ultima_interacao <= NOW() - ($1 || ' hours')::INTERVAL
-                  AND l.ultima_interacao >= NOW() - (($1 + 36) || ' hours')::INTERVAL
+                  AND l.ultima_interacao <= NOW() - ($1::INTEGER * INTERVAL '1 hour')
+                  AND l.ultima_interacao >= NOW() - (($1::INTEGER + 36) * INTERVAL '1 hour')
                   AND NOT EXISTS (
                       SELECT 1 FROM crm_remarketing_envios e 
-                      WHERE e.telefone = l.telefone AND e.etapa = $2
+                      WHERE e.telefone = l.telefone AND e.horas = $1::INTEGER
                   )
                 LIMIT 15
-            `, [horas, etapa]);
+            `, [horas]);
 
             for (const lead of leads.rows) {
                 const telClean = lead.telefone.replace(/\D/g, '');
@@ -1759,8 +1760,9 @@ app.get('/api/remarketing/historico', authMiddleware, async (req, res) => {
 // Disparo manual/imediato do motor de remarketing
 app.post('/api/remarketing/executar-agora', authMiddleware, async (req, res) => {
     try {
-        const total = await processRemarketing();
-        res.json({ ok: true, disparados: total });
+        const result = await processRemarketing(true);
+        const total = typeof result === 'object' ? result.total : result;
+        res.json({ ok: true, disparados: total, detalhe: result });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
