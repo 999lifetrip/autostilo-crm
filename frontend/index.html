@@ -84,6 +84,11 @@
                     <span class="nav-icon">🎯</span>
                     <span class="nav-label">Remarketing</span>
                 </button>
+                <button class="nav-item" data-page="avalista" id="navAvalista">
+                    <span class="nav-icon">🤝</span>
+                    <span class="nav-label">Avalista</span>
+                    <span class="nav-badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; font-size:0.65rem;" id="badgeAvalista">0</span>
+                </button>
                 <button class="nav-item" data-page="equipe" id="navEquipe">
                     <span class="nav-icon">🏎️</span>
                     <span class="nav-label">Vendedores</span>
@@ -587,6 +592,113 @@
                                 <tbody id="remarketingTableBody">
                                     <tr>
                                         <td colspan="5" class="table-loading">Carregando histórico...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── AVALISTA / REPROVADOS PAGE ── -->
+                <div class="page" id="pageAvalista">
+                    <div class="page-header">
+                        <div>
+                            <h2>🤝 Motor de Avalista (Recuperação de Fichas)</h2>
+                            <span class="page-subtitle">Configure a mensagem e envie automaticamente ou com 1 clique para clientes que precisam de outro nome / avalista</span>
+                        </div>
+                        <div class="page-header-actions">
+                            <button class="btn btn-primary" id="btnDispararAvalistaTodos">
+                                <span id="btnDispararAvalistaText">⚡ Pedir Avalista para Pendentes</span>
+                                <span id="btnDispararAvalistaSpinner" class="spinner-small hidden"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cards de Configuração de Avalista -->
+                    <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 1.25rem;">
+                        
+                        <!-- CARD 1: FORMATO DE ENVIO (TEXTO OU ÁUDIO) -->
+                        <div class="card" style="border: 1px solid rgba(16, 185, 129, 0.25);">
+                            <div class="card-header">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="font-size:1.3rem;">🎙️</span>
+                                    <div>
+                                        <h3>Formato de Envio ao Cliente</h3>
+                                        <span class="card-subtitle">Como o Iago deve mandar o pedido de avalista</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div style="display: flex; gap: 12px; margin-bottom: 1rem;">
+                                    <label class="radio-label-card" id="labelFormatoTexto" style="flex:1; padding: 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; display: flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.5);">
+                                        <input type="radio" name="formatoEnvioAvalista" id="radioAvalistaTexto" value="texto" checked>
+                                        <div>
+                                            <strong>💬 Texto WhatsApp</strong>
+                                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Mensagem digitada rápida e direta</div>
+                                        </div>
+                                    </label>
+                                    <label class="radio-label-card" id="labelFormatoAudio" style="flex:1; padding: 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; display: flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, 0.03);">
+                                        <input type="radio" name="formatoEnvioAvalista" id="radioAvalistaAudio" value="audio">
+                                        <div>
+                                            <strong>🎙️ Áudio Humanizado</strong>
+                                            <div style="font-size: 0.75rem; color: var(--text-secondary);">Voz gravada do consultor Iago</div>
+                                        </div>
+                                    </label>
+                                </div>
+                                <div style="background: rgba(0,0,0,0.25); padding: 10px; border-radius: 8px; font-size: 0.8rem; color: var(--text-secondary);">
+                                    💡 <strong>Dica de Conversão:</strong> Mensagens de áudio humanizado costumam ter até 40% mais resposta de clientes que desanimaram com a primeira reprovação!
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CARD 2: MENSAGEM CONFIGURADA -->
+                        <div class="card" style="border: 1px solid rgba(16, 185, 129, 0.25);">
+                            <div class="card-header" style="justify-content: space-between;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="font-size:1.3rem;">📝</span>
+                                    <div>
+                                        <h3>Mensagem de Pedido de Avalista</h3>
+                                        <span class="card-subtitle">Use {nome} para o primeiro nome do cliente</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-sm" id="btnSalvarAvalistaMensagem">💾 Salvar Mensagem</button>
+                            </div>
+                            <div class="card-body">
+                                <textarea id="inputAvalistaMensagem" class="form-control form-textarea-sm" style="font-size:0.84rem; line-height:1.45; min-height:110px; background:rgba(3,10,6,0.9); font-family:inherit;" placeholder="Digite a mensagem..."></textarea>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                                    <div style="font-size:0.75rem; color:var(--text-secondary);">
+                                        Tags disponíveis: <span class="badge-tag-pill">{nome}</span>
+                                    </div>
+                                    <button class="btn btn-ghost btn-sm" id="btnRestaurarPadraoAvalista" style="font-size:0.75rem;">Restaurar Padrão</button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- HISTÓRICO DE CLIENTES REPROVADOS / AGUARDANDO AVALISTA -->
+                    <div class="card">
+                        <div class="card-header" style="justify-content: space-between;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <h3>📋 Clientes Reprovados & Aguardando Avalista</h3>
+                                <span class="badge-pill-brand" id="avalistaTotalCount">0 clientes</span>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" id="btnAtualizarFilaAvalista">🔄 Atualizar Fila</button>
+                        </div>
+                        <div class="table-card" style="border:none; box-shadow:none;">
+                            <table class="data-table" id="avalistaTable">
+                                <thead>
+                                    <tr>
+                                        <th>Cliente / Telefone</th>
+                                        <th>Status do Lead</th>
+                                        <th>Última Mensagem</th>
+                                        <th>Horário</th>
+                                        <th>Ação Imediata</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="avalistaTableBody">
+                                    <tr>
+                                        <td colspan="5" class="table-loading">Carregando lista de avalistas...</td>
                                     </tr>
                                 </tbody>
                             </table>

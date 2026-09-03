@@ -1768,6 +1768,188 @@ app.post('/api/remarketing/executar-agora', authMiddleware, async (req, res) => 
     }
 });
 
+// ─── Motor de Avalista (Recuperação de Fichas) ────────────────────
+async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) {
+    if (!activePool) return { ok: false, error: 'Sem banco' };
+    const telClean = String(telefone || '').replace(/\D/g, '');
+    if (!telClean || telClean.length < 10) return { ok: false, error: 'Telefone inválido' };
+
+    const configRes = await activePool.query(`SELECT * FROM crm_avalista_config WHERE loja_id = 1 LIMIT 1`);
+    const config = configRes.rows[0] || {
+        formato_envio: 'texto',
+        mensagem: 'Oi {nome}! Tudo bem?\n\nDei uma olhada aqui com a nossa equipe e pelo primeiro nome que você passou o sistema bancário não liberou a aprovação de primeira. 🚗\n\nVocê teria algum outro nome de confiança (como esposo(a), pai, mãe ou parente) para a gente rodar a ficha e liberar o carro para você?'
+    };
+
+    const formato = formatoCustom || config.formato_envio || 'texto';
+    let primeiroNome = (nomeLead || '').trim();
+    if (!primeiroNome || /^\d+$/.test(primeiroNome)) {
+        primeiroNome = 'amigo';
+    } else {
+        primeiroNome = primeiroNome.split(' ')[0];
+    }
+
+    const textoFinal = (config.mensagem || '')
+        .replace(/{nome}/gi, primeiroNome);
+
+    const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
+    const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
+    const evoInst = process.env.EVOLUTION_INSTANCE || 'O%20melhor%20vendedor%20on-line%20IAGO';
+    const grupoEscalacao = '120363427065498229@g.us';
+
+    let envioOk = false;
+
+    if (formato === 'audio' && config.audio_url) {
+        const evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
+            method: 'POST',
+            headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: telClean,
+                audio: config.audio_url
+            })
+        });
+        envioOk = evoRes.ok;
+    } else {
+        const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+            method: 'POST',
+            headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: telClean,
+                text: textoFinal
+            })
+        });
+        envioOk = evoRes.ok;
+    }
+
+    await activePool.query(`
+        UPDATE crm_leads
+        SET ia_ativa = true,
+            etiqueta = 'reprovado_pedir_nome',
+            etapa_funil = 'em_atendimento',
+            ultima_interacao = NOW()
+        WHERE telefone = $1 OR telefone = $2
+    `, [telClean, `+${telClean}`]);
+
+    await activePool.query(`
+        UPDATE n8n_status_atendimento
+        SET lock_conversa = false
+        WHERE session_id = $1
+    `, [telClean]);
+
+    await activePool.query(`
+        DELETE FROM n8n_escalacao_alerta
+        WHERE telefone = $1 OR telefone = $2
+    `, [telClean, `+${telClean}`]);
+
+    await activePool.query(`
+        INSERT INTO crm_avalista_envios (telefone, nome_cliente, tipo_envio, mensagem, status, enviado_em)
+        VALUES ($1, $2, $3, $4, 'enviado', NOW())
+    `, [telClean, primeiroNome, formato, textoFinal]);
+
+    try {
+        const textoGrupo = `✅ Mensagem de Avalista/Novo Nome (${formato}) enviada para ${primeiroNome} (+${telClean})! Lead reativado na IA.`;
+        await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+            method: 'POST',
+            headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: grupoEscalacao,
+                text: textoGrupo
+            })
+        });
+    } catch (e) {
+        console.error('Erro ao avisar grupo:', e.message);
+    }
+
+    return { ok: true, formato, textoFinal };
+}
+
+// Endpoints Avalista
+app.get('/api/avalista/config', authMiddleware, async (req, res) => {
+    try {
+        let result = await activePool.query(`SELECT * FROM crm_avalista_config WHERE loja_id = 1 LIMIT 1`);
+        if (result.rows.length === 0) {
+            await activePool.query(`
+                INSERT INTO crm_avalista_config (loja_id, formato_envio, mensagem)
+                VALUES (1, 'texto', 'Oi {nome}! Tudo bem?\\n\\nDei uma olhada aqui com a nossa equipe e pelo primeiro nome que você passou o sistema bancário não liberou a aprovação de primeira. 🚗\\n\\nVocê teria algum outro nome de confiança (como esposo(a), pai, mãe ou parente) para a gente rodar a ficha e liberar o carro para você?')
+            `);
+            result = await activePool.query(`SELECT * FROM crm_avalista_config WHERE loja_id = 1 LIMIT 1`);
+        }
+        res.json({ ok: true, config: result.rows[0] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.patch('/api/avalista/config', authMiddleware, async (req, res) => {
+    try {
+        const { formato_envio, mensagem, audio_url } = req.body;
+        await activePool.query(`
+            UPDATE crm_avalista_config
+            SET formato_envio = COALESCE($1, formato_envio),
+                mensagem = COALESCE($2, mensagem),
+                audio_url = COALESCE($3, audio_url),
+                atualizado_em = NOW()
+            WHERE loja_id = 1
+        `, [formato_envio, mensagem, audio_url]);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/avalista/leads', authMiddleware, async (req, res) => {
+    try {
+        const result = await activePool.query(`
+            SELECT l.id, l.telefone, l.nome, l.etiqueta, l.ultima_interacao, l.ultima_mensagem, l.escalado_em,
+                   COALESCE(e.id IS NOT NULL, false) as avalista_enviado,
+                   e.enviado_em as avalista_enviado_em,
+                   e.tipo_envio
+            FROM crm_leads l
+            LEFT JOIN LATERAL (
+                SELECT id, enviado_em, tipo_envio FROM crm_avalista_envios WHERE telefone = l.telefone ORDER BY id DESC LIMIT 1
+            ) e ON true
+            WHERE l.etiqueta IN ('com_vendedor', 'reprovado_pedir_nome') OR l.escalado_em IS NOT NULL
+            ORDER BY COALESCE(l.escalado_em, l.ultima_interacao) DESC
+            LIMIT 40
+        `);
+        res.json({ ok: true, leads: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/avalista/enviar/:telefone', authMiddleware, async (req, res) => {
+    try {
+        const { telefone } = req.params;
+        const { nome, formato } = req.body || {};
+        const result = await enviarMensagemAvalista(telefone, nome, formato);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/avalista/enviar-todos', authMiddleware, async (req, res) => {
+    try {
+        const pendentes = await activePool.query(`
+            SELECT l.telefone, l.nome
+            FROM crm_leads l
+            WHERE (l.etiqueta = 'com_vendedor' OR l.escalado_em IS NOT NULL)
+              AND NOT EXISTS (
+                  SELECT 1 FROM crm_avalista_envios e WHERE e.telefone = l.telefone
+              )
+            LIMIT 15
+        `);
+        let enviados = 0;
+        for (const p of pendentes.rows) {
+            await enviarMensagemAvalista(p.telefone, p.nome);
+            enviados++;
+        }
+        res.json({ ok: true, total: enviados });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Iniciar worker de remarketing a cada 10 minutos
 setInterval(processRemarketing, 10 * 60 * 1000);
 

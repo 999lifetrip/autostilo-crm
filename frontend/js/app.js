@@ -177,6 +177,7 @@ const pages = {
     veiculos: { page: 'pageVeiculos', title: 'Anúncio / Estoque', nav: 'navVeiculos' },
     iaEditor: { page: 'pageIaEditor', title: 'Editor do Robô', nav: 'navIaEditor' },
     remarketing: { page: 'pageRemarketing', title: '🎯 Motor de Remarketing (3h, 6h, 12h)', nav: 'navRemarketing' },
+    avalista: { page: 'pageAvalista', title: '🤝 Motor de Avalista (Recuperação de Fichas)', nav: 'navAvalista' },
     equipe: { page: 'pageEquipe', title: 'Vendedores', nav: 'navEquipe' },
 };
 
@@ -201,6 +202,7 @@ function navigate(rawKey) {
     if (key === 'dashboard') loadDashboard();
     if (key === 'iaEditor') loadIaPrompt();
     if (key === 'remarketing') loadRemarketing();
+    if (key === 'avalista') loadAvalista();
     if (key === 'equipe') loadUsuarios();
 }
 
@@ -2044,8 +2046,174 @@ function startAutoRefresh() {
         if (activePage?.id === 'pageDashboard') loadDashboard();
         if (activePage?.id === 'pageLeads') loadLeads();
         if (activePage?.id === 'pageRemarketing') loadRemarketing();
+        if (activePage?.id === 'pageAvalista') loadAvalista();
     }, 30000);
 }
+
+// ─── AVALISTA / RECUPERAÇÃO DE REPROVADOS ────────────────────────
+const AVALISTA_PADRAO_MSG = `Oi {nome}! Tudo bem?\n\nDei uma olhada aqui com a nossa equipe e pelo primeiro nome que você passou o sistema bancário não liberou a aprovação de primeira. 🚗\n\nVocê teria algum outro nome de confiança (como esposo(a), pai, mãe ou parente) para a gente rodar a ficha e liberar o carro para você?`;
+
+async function loadAvalista() {
+    const tableBody = document.getElementById('avalistaTableBody');
+    const totalCountEl = document.getElementById('avalistaTotalCount');
+    const inputMsg = document.getElementById('inputAvalistaMensagem');
+    const radioTexto = document.getElementById('radioAvalistaTexto');
+    const radioAudio = document.getElementById('radioAvalistaAudio');
+    const labelTexto = document.getElementById('labelFormatoTexto');
+    const labelAudio = document.getElementById('labelFormatoAudio');
+
+    try {
+        const configRes = await api('/avalista/config');
+        if (configRes && configRes.config) {
+            const cfg = configRes.config;
+            if (inputMsg) inputMsg.value = cfg.mensagem || AVALISTA_PADRAO_MSG;
+            if (cfg.formato_envio === 'audio') {
+                if (radioAudio) radioAudio.checked = true;
+                labelAudio?.style.setProperty('background', 'rgba(16, 185, 129, 0.12)');
+                labelAudio?.style.setProperty('border-color', 'rgba(16, 185, 129, 0.5)');
+                labelTexto?.style.setProperty('background', 'rgba(255, 255, 255, 0.03)');
+                labelTexto?.style.setProperty('border-color', 'var(--border)');
+            } else {
+                if (radioTexto) radioTexto.checked = true;
+                labelTexto?.style.setProperty('background', 'rgba(16, 185, 129, 0.12)');
+                labelTexto?.style.setProperty('border-color', 'rgba(16, 185, 129, 0.5)');
+                labelAudio?.style.setProperty('background', 'rgba(255, 255, 255, 0.03)');
+                labelAudio?.style.setProperty('border-color', 'var(--border)');
+            }
+        }
+
+        const leadsRes = await api('/avalista/leads');
+        const leads = (leadsRes && leadsRes.leads) || [];
+        
+        let pendentes = 0;
+        leads.forEach(l => { if (!l.avalista_enviado && l.etiqueta !== 'reprovado_pedir_nome') pendentes++; });
+        if (totalCountEl) totalCountEl.textContent = `${leads.length} clientes (${pendentes} pendentes)`;
+        const badgeAvalista = document.getElementById('badgeAvalista');
+        if (badgeAvalista) badgeAvalista.textContent = pendentes;
+
+        if (leads.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="5" class="table-loading">Nenhum cliente reprovado ou escalado no momento.</td></tr>`;
+            return;
+        }
+
+        tableBody.innerHTML = leads.map(l => {
+            const nome = escapeHtml(l.nome || l.telefone);
+            const tel = escapeHtml(l.telefone || '');
+            const msg = escapeHtml((l.ultima_mensagem || 'Sem mensagem').slice(0, 75)) + (l.ultima_mensagem?.length > 75 ? '...' : '');
+            const horario = l.escalado_em || l.ultima_interacao;
+            const dataFmt = horario ? new Date(horario).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+            
+            const jaEnviado = l.avalista_enviado || l.etiqueta === 'reprovado_pedir_nome';
+            const statusBadge = jaEnviado 
+                ? `<span class="badge" style="background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3);">✅ Enviado (${l.tipo_envio || 'texto'})</span>`
+                : `<span class="badge" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3);">⏳ Pendente Envio</span>`;
+
+            const btnAcao = jaEnviado
+                ? `<button class="btn btn-ghost btn-sm" onclick="reenviarAvalista('${tel}', '${escapeHtml(l.nome || '')}')" title="Reenviar pedido de avalista">🔄 Reenviar</button>`
+                : `<button class="btn btn-primary btn-sm" onclick="dispararAvalistaIndividual('${tel}', '${escapeHtml(l.nome || '')}')">⚡ Pedir Novo Nome</button>`;
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600; color:#fff;">${nome}</div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary);">📱 +${tel}</div>
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary); max-width:280px;">${msg}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${dataFmt}</td>
+                    <td>${btnAcao}</td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.error('Erro ao carregar avalista:', e);
+        if (tableBody) tableBody.innerHTML = `<tr><td colspan="5" class="table-loading" style="color:#ef4444;">Erro: ${e.message}</td></tr>`;
+    }
+}
+
+document.getElementById('btnSalvarAvalistaMensagem')?.addEventListener('click', async () => {
+    const msg = document.getElementById('inputAvalistaMensagem')?.value;
+    const formato = document.querySelector('input[name="formatoEnvioAvalista"]:checked')?.value || 'texto';
+    try {
+        await api('/avalista/config', {
+            method: 'PATCH',
+            body: { mensagem: msg, formato_envio: formato }
+        });
+        toast('✅ Configuração de Avalista salva com sucesso!');
+    } catch (e) {
+        toast('Erro ao salvar: ' + e.message, 'error');
+    }
+});
+
+document.getElementById('btnRestaurarPadraoAvalista')?.addEventListener('click', () => {
+    const inputMsg = document.getElementById('inputAvalistaMensagem');
+    if (inputMsg) inputMsg.value = AVALISTA_PADRAO_MSG;
+});
+
+document.querySelectorAll('input[name="formatoEnvioAvalista"]').forEach(radio => {
+    radio.addEventListener('change', async (e) => {
+        const val = e.target.value;
+        const labelTexto = document.getElementById('labelFormatoTexto');
+        const labelAudio = document.getElementById('labelFormatoAudio');
+        if (val === 'audio') {
+            labelAudio?.style.setProperty('background', 'rgba(16, 185, 129, 0.12)');
+            labelAudio?.style.setProperty('border-color', 'rgba(16, 185, 129, 0.5)');
+            labelTexto?.style.setProperty('background', 'rgba(255, 255, 255, 0.03)');
+            labelTexto?.style.setProperty('border-color', 'var(--border)');
+        } else {
+            labelTexto?.style.setProperty('background', 'rgba(16, 185, 129, 0.12)');
+            labelTexto?.style.setProperty('border-color', 'rgba(16, 185, 129, 0.5)');
+            labelAudio?.style.setProperty('background', 'rgba(255, 255, 255, 0.03)');
+            labelAudio?.style.setProperty('border-color', 'var(--border)');
+        }
+        await api('/avalista/config', { method: 'PATCH', body: { formato_envio: val } });
+        toast(`Formato de envio alterado para: ${val === 'audio' ? '🎙️ Áudio Humanizado' : '💬 Texto WhatsApp'}`);
+    });
+});
+
+window.dispararAvalistaIndividual = async (telefone, nome) => {
+    try {
+        toast(`Enviando pedido de avalista para +${telefone}...`);
+        const res = await api(`/avalista/enviar/${telefone}`, {
+            method: 'POST',
+            body: { nome }
+        });
+        toast(`✅ Mensagem enviada com sucesso para +${telefone}! Lead reativado na IA.`);
+        await loadAvalista();
+    } catch (e) {
+        toast('Erro ao enviar: ' + e.message, 'error');
+    }
+};
+
+window.reenviarAvalista = async (telefone, nome) => {
+    if (!confirm(`Deseja reenviar a mensagem de avalista para +${telefone}?`)) return;
+    await window.dispararAvalistaIndividual(telefone, nome);
+};
+
+document.getElementById('btnDispararAvalistaTodos')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnDispararAvalistaTodos');
+    const txt = document.getElementById('btnDispararAvalistaText');
+    const spin = document.getElementById('btnDispararAvalistaSpinner');
+
+    txt.textContent = 'Enviando Fila...';
+    spin?.classList.remove('hidden');
+    btn.disabled = true;
+
+    try {
+        const res = await api('/avalista/enviar-todos', { method: 'POST' });
+        toast(`⚡ Sucesso! ${res.total || 0} mensagens de avalista disparadas.`);
+        await loadAvalista();
+    } catch (e) {
+        toast('Erro ao disparar fila: ' + e.message, 'error');
+    } finally {
+        txt.textContent = '⚡ Pedir Avalista para Pendentes';
+        spin?.classList.add('hidden');
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('btnAtualizarFilaAvalista')?.addEventListener('click', loadAvalista);
 
 // ─── Boot ──────────────────────────────────────────────────────
 checkAuth();
