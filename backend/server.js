@@ -1597,6 +1597,48 @@ async function executeRevendaMaisSync(lojaId = 1) {
     return { total_veiculos: ads.length, novos_veiculos: syncedCars, novas_fotos: newPhotos };
 }
 
+// ─── Helpers de Formatação e Sanitização de Nome ───────────────
+function extrairPrimeiroNomeValido(nome) {
+    if (!nome) return '';
+    const limpo = String(nome).trim();
+    // Se não tiver pelo menos uma letra, é puramente números ou caracteres de telefone (ex: 554488043782, +55...)
+    if (!/[a-zA-ZÀ-ÿ]/.test(limpo)) return '';
+    // Se parecer número de telefone mesmo com caracteres misturados
+    if (/^\+?\d{8,}/.test(limpo.replace(/[\s\-\(\)]/g, ''))) return '';
+    // Pega a primeira palavra
+    let primeiro = limpo.split(/\s+/)[0].replace(/[^a-zA-ZÀ-ÿ]/g, '');
+    if (!primeiro || primeiro.length < 2) return '';
+    const blacklist = ['lead', 'cliente', 'amigo', 'whatsapp', 'user', 'usuario', 'teste', 'undefined', 'null', 'contato'];
+    if (blacklist.includes(primeiro.toLowerCase())) return '';
+    return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase();
+}
+
+function aplicarTemplateMensagem(template, nome, placeholders = {}) {
+    if (!template) return '';
+    let texto = template;
+    const primeiroNome = extrairPrimeiroNomeValido(nome);
+    if (primeiroNome) {
+        texto = texto.replace(/{nome}/gi, primeiroNome);
+    } else {
+        texto = texto
+            .replace(/\s*{nome}\s*,/gi, ',')
+            .replace(/\s*{nome}\s*!/gi, '!')
+            .replace(/\s*{nome}\s*\?/gi, '?')
+            .replace(/\s*{nome}/gi, '')
+            .replace(/^,\s*/, '')
+            .replace(/^\s*!\s*/, '')
+            .trim();
+        if (texto.length > 0) {
+            texto = texto.charAt(0).toUpperCase() + texto.slice(1);
+        }
+    }
+    for (const [chave, valor] of Object.entries(placeholders)) {
+        const regex = new RegExp(`{${chave}}`, 'gi');
+        texto = texto.replace(regex, valor);
+    }
+    return texto;
+}
+
 // Endpoint de sincronização manual com RevendaMais
 app.post('/api/veiculos/sync-revendamais', authMiddleware, async (req, res) => {
     try {
@@ -1638,9 +1680,11 @@ async function processRemarketing(bypassHorario = false) {
                        COALESCE(v.modelo, 'carro') as carro_nome
                 FROM crm_leads l
                 LEFT JOIN crm_veiculos v ON l.anotacoes ILIKE '%' || v.modelo || '%'
-                WHERE l.etiqueta NOT IN ('fechou', 'perdeu')
+                WHERE l.ia_ativa = true
+                  AND l.etiqueta IN ('novo', 'em_atendimento', 'aguardando', 'reprovado_pedir_nome')
                   AND l.ultima_interacao <= NOW() - ($1::INTEGER * INTERVAL '1 hour')
-                  AND l.ultima_interacao >= NOW() - (($1::INTEGER + 36) * INTERVAL '1 hour')
+                  AND l.ultima_interacao >= NOW() - INTERVAL '72 hours'
+                  AND NOT EXISTS (SELECT 1 FROM n8n_escalacao_alerta a WHERE a.telefone = l.telefone)
                   AND NOT EXISTS (
                       SELECT 1 FROM crm_remarketing_envios e 
                       WHERE e.telefone = l.telefone AND e.horas = $1::INTEGER
@@ -1781,15 +1825,8 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
     };
 
     const formato = formatoCustom || config.formato_envio || 'texto';
-    let primeiroNome = (nomeLead || '').trim();
-    if (!primeiroNome || /^\d+$/.test(primeiroNome)) {
-        primeiroNome = 'amigo';
-    } else {
-        primeiroNome = primeiroNome.split(' ')[0];
-    }
-
-    const textoFinal = (config.mensagem || '')
-        .replace(/{nome}/gi, primeiroNome);
+    const nomeValido = extrairPrimeiroNomeValido(nomeLead);
+    const textoFinal = aplicarTemplateMensagem(config.mensagem || '', nomeLead);
 
     const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
     const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
@@ -1843,10 +1880,10 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
     await activePool.query(`
         INSERT INTO crm_avalista_envios (telefone, nome_cliente, tipo_envio, mensagem, status, enviado_em)
         VALUES ($1, $2, $3, $4, 'enviado', NOW())
-    `, [telClean, primeiroNome, formato, textoFinal]);
+    `, [telClean, nomeValido || telClean, formato, textoFinal]);
 
     try {
-        const textoGrupo = `✅ Mensagem de Avalista/Novo Nome (${formato}) enviada para ${primeiroNome} (+${telClean})! Lead reativado na IA.`;
+        const textoGrupo = `✅ Mensagem de Avalista/Novo Nome (${formato}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! Lead reativado na IA.`;
         await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
             method: 'POST',
             headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
