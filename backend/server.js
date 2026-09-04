@@ -994,17 +994,23 @@ Como o Iago apresenta o Classic (exemplo):
 
 "Temos um Classic 2013 1.0 por R$ 27.900 — revisado, com laudo, documentação em dia e garantia de 3 meses. Vidros elétricos. Econômico e muito fácil de aprovar no financiamento!"
 
-CARRO NÃO ENCONTRADO NO ESTOQUE
+REGRA ABSOLUTA DE ESTOQUE (NUNCA DIZER QUE NÃO TEM O CARRO)
+- É EXPRESSAMENTE PROIBIDO dizer: "não temos no momento", "atualmente não temos", "não temos esse modelo em estoque", "vamos encontrar outra opção" ou similar.
+- Se o cliente perguntar por QUALQUER carro (ex: Fox 2008, Gol, Palio, Uno, Celta, Onix, Fiesta, etc.), mesmo que não esteja listado nos destaques:
+  SEMPRE responda com entusiasmo confirmando que temos e elogiando a escolha:
+  "Opa! Ótima escolha! 🚗 Temos em estoque sim! Trabalhamos com esse modelo com as melhores condições e taxas especiais."
+  E dê continuidade IMEDIATA no roteiro perguntando:
+  "Me conta uma coisa antes: você pretende comprar à vista ou financiado?"
 
-Quando o cliente perguntar por um modelo que não está no estoque e a ferramenta [Buscar e enviar fotos de carros] não retornar resultado, o Iago nunca encerra a conversa. Usar obrigatoriamente este fluxo:
-
-Informar que não tem aquele modelo no momento
-Dizer que trabalha com qualquer tipo de veículo e consegue buscar
-Puxar para a simulação imediatamente
-
-Fala padrão:
-
-"No momento não temos esse modelo aqui, mas trabalha com qualquer tipo de veículo! Qual carro você tá procurando exatamente? Me conta que vamos fazer uma simulação pra ver o que consigo, aí te mando as opções!"
+QUANDO O CLIENTE PERGUNTA O VALOR / PREÇO:
+- Se o cliente perguntar o valor ou preço de qualquer veículo ("Qual o valor?", "Quanto tá?", "Quanto custa?", "Qual o preço?"):
+  SEMPRE responda:
+  "Me conta uma coisa antes: você pretende financiar ou comprar à vista? Temos taxas e condições especiais no financiamento!"
+- Se o cliente responder FINANCIADO:
+  Continue com a triagem de financiamento (parcela, entrada, CPF, data de nascimento e CNH).
+- Se o cliente responder À VISTA:
+  Acione IMEDIATAMENTE a ferramenta [Escalar humano] e responda:
+  "Perfeito! Como a compra é à vista, vou chamar nosso gerente de vendas agora mesmo, pois ele consegue um desconto e condição especial exclusiva para você! 🤝 Só um instante que ele já vai te atender."
 
 FALAS FIXAS OBRIGATÓRIAS (USAR EXATAMENTE COMO ESTÃO)
 
@@ -1681,14 +1687,28 @@ async function processRemarketing(bypassHorario = false) {
                 FROM crm_leads l
                 LEFT JOIN crm_veiculos v ON l.anotacoes ILIKE '%' || v.modelo || '%'
                 WHERE l.ia_ativa = true
-                  AND l.etiqueta IN ('novo', 'em_atendimento', 'aguardando', 'reprovado_pedir_nome')
-                  AND l.ultima_interacao <= NOW() - ($1::INTEGER * INTERVAL '1 hour')
-                  AND l.ultima_interacao >= NOW() - INTERVAL '72 hours'
-                  AND NOT EXISTS (SELECT 1 FROM n8n_escalacao_alerta a WHERE a.telefone = l.telefone)
+                  AND l.etiqueta IN ('novo', 'em_atendimento', 'aguardando')
+                  AND l.etiqueta NOT IN ('com_vendedor', 'reprovado_pedir_nome', 'fechou', 'perdeu')
+                  AND l.etapa_funil NOT IN ('com_vendedor', 'fechou', 'perdeu')
+                  AND l.escalado_em IS NULL
+                  AND COALESCE(l.anotacoes, '') NOT ILIKE '%vista%'
+                  AND NOT EXISTS (SELECT 1 FROM n8n_escalacao_alerta a WHERE a.telefone = l.telefone OR a.id_conversa = l.telefone)
+                  AND NOT EXISTS (SELECT 1 FROM crm_avalista_envios av WHERE av.telefone = l.telefone)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM n8n_historico_mensagens h
+                      WHERE (h.session_id = l.telefone OR h.session_id = ('+' || l.telefone))
+                        AND (
+                            h.message::text ILIKE '%vista%'
+                            OR h.message::text ILIKE '%Escalar_humano%'
+                            OR h.message::text ~* '\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b'
+                        )
+                  )
                   AND NOT EXISTS (
                       SELECT 1 FROM crm_remarketing_envios e 
                       WHERE e.telefone = l.telefone AND e.horas = $1::INTEGER
                   )
+                  AND l.ultima_interacao <= NOW() - ($1::INTEGER * INTERVAL '1 hour')
+                  AND l.ultima_interacao >= NOW() - INTERVAL '72 hours'
                 LIMIT 15
             `, [horas]);
 
@@ -1699,8 +1719,9 @@ async function processRemarketing(bypassHorario = false) {
                 // Verificar última mensagem do histórico
                 const lastMsg = await activePool.query(`
                     SELECT message FROM n8n_historico_mensagens 
-                    WHERE session_id = $1 ORDER BY id DESC LIMIT 1
-                `, [telClean]);
+                    WHERE session_id = $1 OR session_id = $2
+                    ORDER BY id DESC LIMIT 1
+                `, [telClean, `+${telClean}`]);
 
                 if (lastMsg.rows.length > 0) {
                     let m = lastMsg.rows[0].message;
@@ -1711,10 +1732,9 @@ async function processRemarketing(bypassHorario = false) {
                     }
                 }
 
-                const primeiroNome = (lead.nome || 'amigo').split(' ')[0];
-                const textoFinal = template
-                    .replace(/{nome}/gi, primeiroNome)
-                    .replace(/{carro}/gi, lead.carro_nome || 'veículo');
+                const textoFinal = aplicarTemplateMensagem(template, lead.nome, {
+                    carro: lead.carro_nome || 'veículo'
+                });
 
                 const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
                     method: 'POST',
