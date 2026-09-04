@@ -1879,23 +1879,25 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
 
     await activePool.query(`
         UPDATE crm_leads
-        SET ia_ativa = true,
-            etiqueta = 'reprovado_pedir_nome',
-            etapa_funil = 'em_atendimento',
+        SET ia_ativa = false,
+            etiqueta = 'com_vendedor',
+            etapa_funil = 'com_vendedor',
+            escalado_em = NOW(),
             ultima_interacao = NOW()
         WHERE telefone = $1 OR telefone = $2
     `, [telClean, `+${telClean}`]);
 
     await activePool.query(`
         UPDATE n8n_status_atendimento
-        SET lock_conversa = false
+        SET lock_conversa = true
         WHERE session_id = $1
     `, [telClean]);
 
     await activePool.query(`
-        DELETE FROM n8n_escalacao_alerta
-        WHERE telefone = $1 OR telefone = $2
-    `, [telClean, `+${telClean}`]);
+        INSERT INTO n8n_escalacao_alerta (id_conversa, telefone)
+        VALUES ($1, $1)
+        ON CONFLICT (id_conversa) DO NOTHING
+    `, [telClean]);
 
     await activePool.query(`
         INSERT INTO crm_avalista_envios (telefone, nome_cliente, tipo_envio, mensagem, status, enviado_em)
@@ -1903,7 +1905,7 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
     `, [telClean, nomeValido || telClean, formato, textoFinal]);
 
     try {
-        const textoGrupo = `✅ Mensagem de Avalista/Novo Nome (${formato}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! Lead reativado na IA.`;
+        const textoGrupo = `🤝 *AVALISTA SOLICITADO:* Mensagem de Avalista/Novo Nome (${formato}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! O robô pausou e o lead foi direcionado para o vendedor humano dar continuidade. 🚗`;
         await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
             method: 'POST',
             headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
