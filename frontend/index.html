@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=20260918_2">
 </head>
 <body>
     <!-- LOGIN SCREEN -->
@@ -83,6 +83,11 @@
                 <button class="nav-item" data-page="remarketing" id="navRemarketing">
                     <span class="nav-icon">🎯</span>
                     <span class="nav-label">Remarketing</span>
+                </button>
+                <button class="nav-item" data-page="aprovados" id="navAprovados">
+                    <span class="nav-icon">✅</span>
+                    <span class="nav-label">Fichas Aprovadas</span>
+                    <span class="nav-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size:0.65rem;" id="badgeAprovados">0</span>
                 </button>
                 <button class="nav-item" data-page="avalista" id="navAvalista">
                     <span class="nav-icon">🤝</span>
@@ -239,6 +244,8 @@
                             <button class="filter-chip active" data-etiqueta="">Todos os Leads</button>
                             <button class="filter-chip" data-etiqueta="novo">🆕 Novos</button>
                             <button class="filter-chip" data-etiqueta="qualificado">⭐ Triagem OK</button>
+                            <button class="filter-chip" data-etiqueta="aprovado">✅ Aprovados</button>
+                            <button class="filter-chip" data-etiqueta="a_vista">💵 À Vista</button>
                             <button class="filter-chip" data-etiqueta="agendado">📅 Agendados</button>
                             <button class="filter-chip" data-etiqueta="fechado">🤝 Fechados</button>
                             <button class="filter-chip" data-etiqueta="perdido">❌ Perdidos</button>
@@ -599,6 +606,79 @@
                     </div>
                 </div>
 
+                <!-- ── FICHAS APROVADAS & COMPRAS À VISTA ── -->
+                <div class="page" id="pageAprovados">
+                    <div class="page-header">
+                        <div>
+                            <h2>✅ Painel de Fichas Aprovadas & Compras</h2>
+                            <span class="page-subtitle">Clientes com crédito aprovado ou compras à vista para fechamento e entrega</span>
+                        </div>
+                        <div class="page-header-actions">
+                            <button class="btn btn-ghost" id="btnAtualizarAprovados">🔄 Atualizar Fichas</button>
+                        </div>
+                    </div>
+
+                    <!-- Métricas de Aprovados -->
+                    <div class="stats-row" style="margin-bottom: 1.25rem;">
+                        <div class="stat-card stat-compact stat-emerald">
+                            <div class="stat-icon-wrap"><span class="stat-icon">✅</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Total Aprovados / À Vista</span>
+                                <div class="stat-value" id="statTotalAprovados">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-compact stat-emerald">
+                            <div class="stat-icon-wrap"><span class="stat-icon">📄</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Financiamento Aprovado</span>
+                                <div class="stat-value" id="statFinanciamentoAprovado">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-compact stat-orange">
+                            <div class="stat-icon-wrap"><span class="stat-icon">💵</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Compra À Vista</span>
+                                <div class="stat-value" id="statAVistaCount">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filtros e Busca -->
+                    <div class="filters-bar" style="margin-bottom: 1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div class="filter-chips" id="aprovadosTipoFilter">
+                            <button class="filter-chip active" data-tipo="todos">Todos (<span id="countChipTodos">0</span>)</button>
+                            <button class="filter-chip" data-tipo="aprovado">✅ Financiamento Aprovado (<span id="countChipAprovados">0</span>)</button>
+                            <button class="filter-chip" data-tipo="a_vista">💵 Compra À Vista (<span id="countChipAVista">0</span>)</button>
+                        </div>
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="buscaAprovadosInput" placeholder="Buscar por cliente, carro ou telefone...">
+                        </div>
+                    </div>
+
+                    <!-- Tabela de Fichas Aprovadas -->
+                    <div class="table-card">
+                        <table class="data-table" id="aprovadosTable">
+                            <thead>
+                                <tr>
+                                    <th>Cliente / WhatsApp</th>
+                                    <th>Tipo</th>
+                                    <th>Veículo de Interesse</th>
+                                    <th>Condição (Entrada / Parcela)</th>
+                                    <th>Documentação (CPF / Nasc)</th>
+                                    <th>Consultor</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="aprovadosTableBody">
+                                <tr>
+                                    <td colspan="7" class="table-loading">Carregando fichas aprovadas...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- ── AVALISTA / REPROVADOS PAGE ── -->
                 <div class="page" id="pageAvalista">
                     <div class="page-header">
@@ -645,8 +725,19 @@
                                         </div>
                                     </label>
                                 </div>
+
+                                <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: rgba(16, 185, 129, 0.08); padding: 10px 14px; border-radius: 8px; border: 1px dashed rgba(16, 185, 129, 0.35); flex-wrap: wrap; gap: 8px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <button type="button" class="btn btn-ghost btn-sm" id="btnPreviewAudioAvalista" style="border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-weight:600;">
+                                            🎧 Ouvir Áudio do Iago (Prévia)
+                                        </button>
+                                        <span id="previewAudioSpinner" class="spinner-small hidden"></span>
+                                    </div>
+                                    <audio id="audioAvalistaPlayer" controls class="hidden" style="height: 32px; max-width: 220px;"></audio>
+                                </div>
+
                                 <div style="background: rgba(0,0,0,0.25); padding: 10px; border-radius: 8px; font-size: 0.8rem; color: var(--text-secondary);">
-                                    💡 <strong>Dica de Conversão:</strong> Mensagens de áudio humanizado costumam ter até 40% mais resposta de clientes que desanimaram com a primeira reprovação!
+                                    💡 <strong>Dica de Conversão:</strong> Mensagens de áudio humanizado com a voz do Iago aumentam em até 40% a resposta de clientes que desanimaram com a primeira reprovação!
                                 </div>
                             </div>
                         </div>
@@ -743,6 +834,38 @@
                         <h4>Consultor Responsável</h4>
                         <select id="vendedorSelect" class="form-control"></select>
                     </div>
+
+                    <!-- Bloco de Triagem do Cliente (Auto-extraído pelo Iago) -->
+                    <div class="modal-section" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                            <h4 style="margin:0; font-size:0.85rem; color:#34d399; display:flex; align-items:center; gap:6px;">
+                                <span>📋 Ficha de Triagem (Iago IA)</span>
+                            </h4>
+                            <div style="display:flex; gap:6px;">
+                                <button type="button" class="btn btn-sm" id="btnMarcarAprovadoModal" style="background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4); padding:3px 8px; font-size:0.75rem; font-weight:600; cursor:pointer;" title="Marcar como Financiamento Aprovado">
+                                    ✅ Aprovado
+                                </button>
+                                <button type="button" class="btn btn-sm" id="btnMarcarAVistaModal" style="background:rgba(234,179,8,0.2); color:#facc15; border:1px solid rgba(234,179,8,0.4); padding:3px 8px; font-size:0.75rem; font-weight:600; cursor:pointer;" title="Marcar como Compra À Vista">
+                                    💵 À Vista
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="fichaTriagemContainer" style="font-size:0.8rem; line-height:1.5; display:grid; grid-template-columns: 1fr 1fr; gap:6px 10px;">
+                            <div><span style="color:var(--text-secondary);">🚗 Carro:</span> <strong id="triagemCarro" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">💳 Forma:</span> <strong id="triagemForma" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">💰 Entrada:</span> <strong id="triagemEntrada" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">💵 Parcela:</span> <strong id="triagemParcela" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">📄 CPF:</span> <strong id="triagemCpf" style="color:#fff; font-family:monospace;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">🎂 Nasc:</span> <strong id="triagemNasc" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">🪪 CNH:</span> <strong id="triagemCnh" style="color:#fff;">—</strong></div>
+                            <div><span style="color:var(--text-secondary);">🔄 Troca:</span> <strong id="triagemTroca" style="color:#fff;">—</strong></div>
+                        </div>
+                        <div id="triagemResumoWrapper" style="margin-top:8px; padding-top:8px; border-top:1px dashed rgba(255,255,255,0.08); font-size:0.75rem; color:var(--text-secondary);">
+                            <span style="color:#94a3b8; font-weight:600;">📝 Resumo:</span> <span id="triagemResumo" style="color:#cbd5e1;">Aguardando dados de simulação...</span>
+                        </div>
+                    </div>
+
                     <div class="modal-section">
                         <h4>Anotações do Veículo / Negociação</h4>
                         <textarea id="anotacoesInput" class="form-control form-textarea" placeholder="Ex: Interessado no Corolla 2022, tem troca de Gol 2018..."></textarea>
@@ -977,6 +1100,6 @@
     <!-- TOAST -->
     <div id="toast" class="toast hidden"></div>
 
-    <script src="js/app.js"></script>
+    <script src="js/app.js?v=20260918_2"></script>
 </body>
 </html>
