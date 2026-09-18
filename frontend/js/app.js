@@ -77,12 +77,15 @@ function initials(nome) {
 const ETIQUETAS = {
     novo: { emoji: '🆕', label: 'Novo', cls: 'badge-novo' },
     quente: { emoji: '🔥', label: 'Quente', cls: 'badge-quente' },
+    aprovado: { emoji: '✅', label: 'Aprovado', cls: 'badge-fechou' },
+    a_vista: { emoji: '💵', label: 'À Vista', cls: 'badge-quente' },
     agendado: { emoji: '📅', label: 'Agendado', cls: 'badge-agendado' },
-    fechou: { emoji: '✅', label: 'Fechou', cls: 'badge-fechou' },
+    fechou: { emoji: '🤝', label: 'Fechou', cls: 'badge-fechou' },
     perdeu: { emoji: '❌', label: 'Perdeu', cls: 'badge-perdeu' },
     aguardando: { emoji: '🕐', label: 'Aguardando', cls: 'badge-aguardando' },
     com_vendedor: { emoji: '👤', label: 'Com Vendedor', cls: 'badge-perdeu' },
     em_atendimento: { emoji: '💬', label: 'Em Atendimento', cls: 'badge-quente' },
+    reprovado_pedir_nome: { emoji: '🤝', label: 'Pedir Avalista', cls: 'badge-perdeu' },
 };
 
 function badgeEtiqueta(e) {
@@ -177,6 +180,7 @@ const pages = {
     veiculos: { page: 'pageVeiculos', title: 'Anúncio / Estoque', nav: 'navVeiculos' },
     iaEditor: { page: 'pageIaEditor', title: 'Editor do Robô', nav: 'navIaEditor' },
     remarketing: { page: 'pageRemarketing', title: '🎯 Motor de Remarketing (3h, 6h, 12h)', nav: 'navRemarketing' },
+    aprovados: { page: 'pageAprovados', title: '✅ Fichas Aprovadas & Compras', nav: 'navAprovados' },
     avalista: { page: 'pageAvalista', title: '🤝 Motor de Avalista (Recuperação de Fichas)', nav: 'navAvalista' },
     equipe: { page: 'pageEquipe', title: 'Vendedores', nav: 'navEquipe' },
 };
@@ -202,6 +206,7 @@ function navigate(rawKey) {
     if (key === 'dashboard') loadDashboard();
     if (key === 'iaEditor') loadIaPrompt();
     if (key === 'remarketing') loadRemarketing();
+    if (key === 'aprovados') loadAprovados();
     if (key === 'avalista') loadAvalista();
     if (key === 'equipe') loadUsuarios();
 }
@@ -537,6 +542,81 @@ function renderLeadModal(lead, historico = [], audios = [], veiculosFotos = [], 
             usuarios.map(u => `<option value="${u.id}" ${lead.vendedor_id === u.id ? 'selected' : ''}>${u.nome}</option>`).join('');
 
         document.getElementById('anotacoesInput').value = lead.anotacoes || '';
+
+        // ── Preencher Ficha de Triagem do Cliente ──
+        const triagem = lead.dados_triagem || {};
+        const elCarro = document.getElementById('triagemCarro');
+        const elForma = document.getElementById('triagemForma');
+        const elEntrada = document.getElementById('triagemEntrada');
+        const elParcela = document.getElementById('triagemParcela');
+        const elCpf = document.getElementById('triagemCpf');
+        const elNasc = document.getElementById('triagemNasc');
+        const elCnh = document.getElementById('triagemCnh');
+        const elTroca = document.getElementById('triagemTroca');
+        const elResumo = document.getElementById('triagemResumo');
+
+        if (elCarro) elCarro.textContent = triagem.carro_interesse || '—';
+        if (elForma) elForma.textContent = triagem.forma_compra || (lead.etiqueta === 'a_vista' ? 'À Vista' : 'Financiamento');
+        if (elEntrada) elEntrada.textContent = triagem.entrada || '—';
+        if (elParcela) elParcela.textContent = triagem.parcela || '—';
+        if (elCpf) elCpf.textContent = triagem.cpf || '—';
+        if (elNasc) elNasc.textContent = triagem.nascimento || '—';
+        if (elCnh) elCnh.textContent = triagem.cnh || '—';
+        if (elTroca) elTroca.textContent = triagem.troca || 'Não informada';
+        if (elResumo) elResumo.textContent = triagem.resumo || 'Sem observações adicionais gravadas na simulação.';
+
+        // Botões de Ação Rápida no Modal
+        const btnAprov = document.getElementById('btnMarcarAprovadoModal');
+        const btnVista = document.getElementById('btnMarcarAVistaModal');
+
+        if (btnAprov) {
+            btnAprov.onclick = async () => {
+                try {
+                    await api(`/leads/${encodeURIComponent(lead.telefone)}/status-rapido`, {
+                        method: 'PATCH',
+                        body: { etiqueta: 'aprovado' }
+                    });
+                    toast('✅ Lead marcado como APROVADO! Movido para Fichas Aprovadas.');
+                    lead.etiqueta = 'aprovado';
+                    // Atualiza botão na grid de etiquetas
+                    etiquetaGrid.querySelectorAll('.etiqueta-btn').forEach(b => {
+                        if (b.dataset.etiqueta === 'aprovado') b.classList.add('active-etiqueta');
+                        else b.classList.remove('active-etiqueta');
+                    });
+                    if (pages.leads.page && document.getElementById(pages.leads.page).classList.contains('active')) loadLeads();
+                    if (document.getElementById('badgeAprovados')) {
+                        const cur = parseInt(document.getElementById('badgeAprovados').textContent || '0');
+                        document.getElementById('badgeAprovados').textContent = cur + 1;
+                    }
+                } catch(err) {
+                    toast('Erro ao aprovar: ' + err.message, 'error');
+                }
+            };
+        }
+
+        if (btnVista) {
+            btnVista.onclick = async () => {
+                try {
+                    await api(`/leads/${encodeURIComponent(lead.telefone)}/status-rapido`, {
+                        method: 'PATCH',
+                        body: { etiqueta: 'a_vista' }
+                    });
+                    toast('💵 Lead marcado como COMPRA À VISTA! Movido para Fichas Aprovadas.');
+                    lead.etiqueta = 'a_vista';
+                    etiquetaGrid.querySelectorAll('.etiqueta-btn').forEach(b => {
+                        if (b.dataset.etiqueta === 'a_vista') b.classList.add('active-etiqueta');
+                        else b.classList.remove('active-etiqueta');
+                    });
+                    if (pages.leads.page && document.getElementById(pages.leads.page).classList.contains('active')) loadLeads();
+                    if (document.getElementById('badgeAprovados')) {
+                        const cur = parseInt(document.getElementById('badgeAprovados').textContent || '0');
+                        document.getElementById('badgeAprovados').textContent = cur + 1;
+                    }
+                } catch(err) {
+                    toast('Erro ao marcar à vista: ' + err.message, 'error');
+                }
+            };
+        }
     }
 
     renderChat(historico, audios, veiculosFotos, isFirstLoad);
@@ -2214,6 +2294,180 @@ document.getElementById('btnDispararAvalistaTodos')?.addEventListener('click', a
 });
 
 document.getElementById('btnAtualizarFilaAvalista')?.addEventListener('click', loadAvalista);
+
+// ─── Prévia de Áudio do Iago (Avalista) ──────────────────────────
+document.getElementById('btnPreviewAudioAvalista')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnPreviewAudioAvalista');
+    const spin = document.getElementById('previewAudioSpinner');
+    const player = document.getElementById('audioAvalistaPlayer');
+    const msg = document.getElementById('inputAvalistaMensagem')?.value;
+
+    btn.disabled = true;
+    spin?.classList.remove('hidden');
+
+    try {
+        toast('🎙️ Gerando prévia da voz do consultor Iago com IA...');
+        const res = await api('/avalista/preview-audio', {
+            method: 'POST',
+            body: { mensagem: msg, nome: 'João' }
+        });
+
+        if (res.audio_data && player) {
+            player.src = res.audio_data;
+            player.classList.remove('hidden');
+            player.play().catch(() => {});
+            toast('✅ Áudio sintetizado! Tocando prévia.');
+        }
+    } catch (e) {
+        toast('Erro ao gerar prévia de áudio: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        spin?.classList.add('hidden');
+    }
+});
+
+// ─── FICHAS APROVADAS & COMPRAS À VISTA ───────────────────────────
+let aprovadosState = { tipo: 'todos', busca: '' };
+
+async function loadAprovados() {
+    const tableBody = document.getElementById('aprovadosTableBody');
+    const statTotal = document.getElementById('statTotalAprovados');
+    const statAprov = document.getElementById('statFinanciamentoAprovado');
+    const statVista = document.getElementById('statAVistaCount');
+    const chipTodos = document.getElementById('countChipTodos');
+    const chipAprov = document.getElementById('countChipAprovados');
+    const chipVista = document.getElementById('countChipAVista');
+    const badgeNav = document.getElementById('badgeAprovados');
+
+    try {
+        const queryParams = new URLSearchParams();
+        if (aprovadosState.tipo && aprovadosState.tipo !== 'todos') queryParams.set('tipo', aprovadosState.tipo);
+        if (aprovadosState.busca) queryParams.set('busca', aprovadosState.busca);
+
+        const res = await api(`/aprovados/leads?${queryParams.toString()}`);
+        const leads = (res && res.leads) || [];
+
+        // Contagens gerais
+        let totalFinanc = 0;
+        let totalVista = 0;
+        leads.forEach(l => {
+            if (l.etiqueta === 'a_vista') totalVista++;
+            else totalFinanc++;
+        });
+
+        const totalGeral = leads.length;
+        if (statTotal) statTotal.textContent = totalGeral;
+        if (statAprov) statAprov.textContent = totalFinanc;
+        if (statVista) statVista.textContent = totalVista;
+        if (chipTodos) chipTodos.textContent = totalGeral;
+        if (chipAprov) chipAprov.textContent = totalFinanc;
+        if (chipVista) chipVista.textContent = totalVista;
+        if (badgeNav) badgeNav.textContent = totalGeral;
+
+        if (leads.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="table-loading" style="color:var(--text-secondary); padding: 2rem;">
+                        Nenhuma ficha aprovada ou compra à vista encontrada no momento.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tableBody.innerHTML = leads.map(l => {
+            const nome = escapeHtml(l.nome || l.telefone);
+            const tel = escapeHtml(l.telefone || '');
+            const telLimpo = tel.replace(/\D/g, '');
+            const vendedor = escapeHtml(l.vendedor_nome || 'Consultor Iago');
+            const triagem = l.dados_triagem || {};
+
+            const isVista = l.etiqueta === 'a_vista';
+            const badgeTipo = isVista
+                ? `<span class="badge" style="background:rgba(234,179,8,0.18); color:#facc15; border:1px solid rgba(234,179,8,0.4); font-weight:600;">💵 Compra À Vista</span>`
+                : `<span class="badge" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.4); font-weight:600;">✅ Financiamento Aprovado</span>`;
+
+            const carro = escapeHtml(triagem.carro_interesse || 'Carro em negociação');
+            const entrada = escapeHtml(triagem.entrada || (isVista ? 'Pagamento Integral' : '—'));
+            const parcela = escapeHtml(triagem.parcela || (isVista ? '—' : '—'));
+            const condicao = `
+                <div style="font-weight:600; color:#fff;">Entrada: <span style="color:#34d399;">${entrada}</span></div>
+                <div style="font-size:0.75rem; color:var(--text-secondary);">${isVista ? '💵 À Vista' : 'Parcela: ' + parcela}</div>
+            `;
+
+            const cpf = escapeHtml(triagem.cpf || 'Não coletado');
+            const nasc = escapeHtml(triagem.nascimento || '—');
+            const cnh = escapeHtml(triagem.cnh ? (triagem.cnh.toLowerCase().includes('sim') ? 'CNH: Sim' : 'CNH: Não') : '—');
+            const docs = `
+                <div style="font-family:monospace; font-size:0.8rem; color:#cbd5e1;">CPF: ${cpf}</div>
+                <div style="font-size:0.75rem; color:var(--text-secondary);">Nasc: ${nasc} • ${cnh}</div>
+            `;
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600; color:#fff;">${nome}</div>
+                        <div style="font-size:0.75rem; color:var(--text-secondary);">📱 +${tel}</div>
+                    </td>
+                    <td>${badgeTipo}</td>
+                    <td>
+                        <div style="font-weight:600; color:#e2e8f0;">🚗 ${carro}</div>
+                        ${triagem.troca ? `<div style="font-size:0.75rem; color:#94a3b8;">🔄 Troca: ${escapeHtml(triagem.troca)}</div>` : ''}
+                    </td>
+                    <td>${condicao}</td>
+                    <td>${docs}</td>
+                    <td style="font-size:0.8rem; color:var(--text-secondary);">${vendedor}</td>
+                    <td>
+                        <div style="display:flex; gap:6px;">
+                            <button class="btn btn-ghost btn-sm" onclick="openLeadModal('${tel}')" title="Ver ficha e conversa completa">📋 Ficha</button>
+                            <a href="https://wa.me/${telLimpo}" target="_blank" class="btn btn-primary btn-sm" style="background:#25D366; border-color:#25D366; color:#000; text-decoration:none; display:inline-flex; align-items:center;" title="Chamar no WhatsApp">💬 WhatsApp</a>
+                            <button class="btn btn-ghost btn-sm" onclick="concluirVendaLead('${tel}')" title="Marcar venda concluída" style="border:1px solid rgba(16,185,129,0.3); color:#34d399;">🤝 Fechar</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.error('Erro ao carregar aprovados:', e);
+        if (tableBody) tableBody.innerHTML = `<tr><td colspan="7" class="table-loading" style="color:#ef4444;">Erro ao carregar fichas: ${e.message}</td></tr>`;
+    }
+}
+
+window.concluirVendaLead = async (telefone) => {
+    if (!confirm(`Deseja marcar a negociação do cliente +${telefone} como VENDA CONCLUÍDA (Fechou)? 🚗🎉`)) return;
+    try {
+        await api(`/leads/${encodeURIComponent(telefone)}/status-rapido`, {
+            method: 'PATCH',
+            body: { etiqueta: 'fechou' }
+        });
+        toast('🎉 Parabéns pela venda! Status atualizado para FECHOU.');
+        await loadAprovados();
+    } catch(e) {
+        toast('Erro ao concluir venda: ' + e.message, 'error');
+    }
+};
+
+// Filtros da página de Aprovados
+document.querySelectorAll('#aprovadosTipoFilter .filter-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('#aprovadosTipoFilter .filter-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        aprovadosState.tipo = btn.dataset.tipo;
+        loadAprovados();
+    });
+});
+
+let searchAprovadosTimeout = null;
+document.getElementById('buscaAprovadosInput')?.addEventListener('input', (e) => {
+    clearTimeout(searchAprovadosTimeout);
+    searchAprovadosTimeout = setTimeout(() => {
+        aprovadosState.busca = e.target.value.trim();
+        loadAprovados();
+    }, 400);
+});
+
+document.getElementById('btnAtualizarAprovados')?.addEventListener('click', loadAprovados);
 
 // ─── Boot ──────────────────────────────────────────────────────
 checkAuth();
