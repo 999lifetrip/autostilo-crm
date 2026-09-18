@@ -347,8 +347,13 @@ app.get('/api/leads/:telefone', authMiddleware, async (req, res) => {
              ORDER BY v.id, f.ordem ASC, f.id ASC`
         ).catch(() => ({ rows: [] }));
 
+        const dadosTriagem = extrairDadosTriagem(historico.rows);
+
         res.json({ 
-            lead: lead.rows[0], 
+            lead: {
+                ...lead.rows[0],
+                dados_triagem: dadosTriagem
+            }, 
             historico: historico.rows, 
             audios: audios.rows,
             veiculosFotos: veiculosFotos.rows 
@@ -1832,6 +1837,161 @@ app.post('/api/remarketing/executar-agora', authMiddleware, async (req, res) => 
     }
 });
 
+// ─── OpenAI TTS para Mensagens Humanizadas do Iago ───────────────
+let cachedOpenAiKey = process.env.OPENAI_API_KEY || '';
+
+async function getOpenAiApiKey() {
+    if (cachedOpenAiKey) return cachedOpenAiKey;
+    if (!activePool) return '';
+    try {
+        const crypto = require('crypto');
+        const encryptionKey = process.env.N8N_ENCRYPTION_KEY || 'vBbhoyxnyss5EG5QyPcgRW5FZ2s0vUIM';
+        function evpBytesToKey(password, salt, keyLen, ivLen) {
+            let d = Buffer.alloc(0), d_i = Buffer.alloc(0);
+            while (d.length < (keyLen + ivLen)) {
+                d_i = crypto.createHash('md5').update(Buffer.concat([d_i, Buffer.from(password), salt])).digest();
+                d = Buffer.concat([d, d_i]);
+            }
+            return { key: d.slice(0, keyLen), iv: d.slice(keyLen, keyLen + ivLen) };
+        }
+        function decryptCryptoJs(base64Data, password) {
+            const raw = Buffer.from(base64Data, 'base64');
+            if (raw.slice(0, 8).toString() !== 'Salted__') return null;
+            const salt = raw.slice(8, 16);
+            const ciphertext = raw.slice(16);
+            const { key, iv } = evpBytesToKey(password, salt, 32, 16);
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+            let decrypted = decipher.update(ciphertext);
+            decrypted = Buffer.concat([decrypted, decipher.final()]);
+            return JSON.parse(decrypted.toString('utf8'));
+        }
+        const res = await activePool.query("SELECT data FROM credentials_entity WHERE type = 'openAiApi' ORDER BY id DESC LIMIT 2");
+        for (const row of res.rows) {
+            const dec = decryptCryptoJs(row.data, encryptionKey);
+            if (dec && dec.apiKey) {
+                cachedOpenAiKey = dec.apiKey;
+                return cachedOpenAiKey;
+            }
+        }
+    } catch(e) {
+        console.error('Erro ao recuperar chave OpenAI do banco:', e.message);
+    }
+    return cachedOpenAiKey;
+}
+
+async function sintetizarAudioTTS(texto, voz = 'onyx') {
+    try {
+        if (!texto || !texto.trim()) return null;
+        const apiKey = await getOpenAiApiKey();
+        if (!apiKey) {
+            console.error('❌ Nenhuma chave de API da OpenAI encontrada para TTS.');
+            return null;
+        }
+
+        console.log(`🎙️ [TTS] Sintetizando voz do Iago (${voz}) para texto (${texto.length} caracteres)...`);
+        const res = await fetch('https://api.openai.com/v1/audio/speech', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'tts-1',
+                input: texto.slice(0, 1000), // limite seguro
+                voice: voz // onyx = voz masculina confiante, profissional
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.text();
+            console.error('❌ Erro na OpenAI TTS:', res.status, err);
+            return null;
+        }
+
+        const arrayBuf = await res.arrayBuffer();
+        const base64 = Buffer.from(arrayBuf).toString('base64');
+        console.log(`✅ [TTS] Áudio sintetizado com sucesso! Tamanho base64: ${base64.length}`);
+        return base64;
+    } catch (e) {
+        console.error('❌ Exceção ao sintetizar áudio TTS:', e.message);
+        return null;
+    }
+}
+
+// ─── Parser Inteligente de Triagem do Cliente ─────────────────────
+function extrairDadosTriagem(historicoRows) {
+    const dados = {
+        carro_interesse: null,
+        forma_compra: null,
+        entrada: null,
+        parcela: null,
+        cpf: null,
+        nascimento: null,
+        cnh: null,
+        troca: null,
+        resumo: null,
+        origem: null
+    };
+
+    if (!historicoRows || !historicoRows.length) return dados;
+
+    for (const row of historicoRows) {
+        let contentStr = '';
+        if (typeof row.message === 'string') {
+            contentStr = row.message;
+        } else if (row.message && typeof row.message === 'object') {
+            contentStr = row.message.content || JSON.stringify(row.message);
+        }
+
+        // Normalizar quebras de linha escapadas e caracteres de formatação
+        contentStr = contentStr.replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\"/g, '"');
+
+        // Tentar extrair do bloco formatado de simulação / escalação
+        if (contentStr.includes('SIMULAÇÃO') || contentStr.includes('ESCALADO') || contentStr.includes('Carro de Interesse')) {
+            dados.origem = 'escalacao';
+
+            const mCarro = contentStr.match(/(?:Carro de Interesse|Veículo|Modelo)[:\s*]+([^\n\r*]+)/i);
+            if (mCarro && !dados.carro_interesse) dados.carro_interesse = mCarro[1].trim();
+
+            const mForma = contentStr.match(/(?:Forma de Compra|Tipo de Compra|Condição)[:\s*]+([^\n\r*]+)/i);
+            if (mForma && !dados.forma_compra) dados.forma_compra = mForma[1].trim();
+
+            const mEntrada = contentStr.match(/(?:Entrada)[:\s*]+([^\n\r*]+)/i);
+            if (mEntrada && !dados.entrada) dados.entrada = mEntrada[1].trim();
+
+            const mParcela = contentStr.match(/(?:Parcela(?: Desejada)?)[:\s*]+([^\n\r*]+)/i);
+            if (mParcela && !dados.parcela) dados.parcela = mParcela[1].trim();
+
+            const mCpf = contentStr.match(/(?:CPF)[:\s*`]+([0-9\.\-\s]+)/i);
+            if (mCpf && !dados.cpf) dados.cpf = mCpf[1].replace(/[`\s]/g, '').trim();
+
+            const mNasc = contentStr.match(/(?:Nascimento|Data de Nasc)[:\s*]+([0-9\/\.\-]+)/i);
+            if (mNasc && !dados.nascimento) dados.nascimento = mNasc[1].trim();
+
+            const mCnh = contentStr.match(/(?:Possui CNH|CNH)[:\s*]+([^\n\r*]+)/i);
+            if (mCnh && !dados.cnh) dados.cnh = mCnh[1].trim();
+
+            const mTroca = contentStr.match(/(?:Troca|Veículo na troca|Moto)[:\s*]+([^\n\r*]+)/i);
+            if (mTroca && !dados.troca) dados.troca = mTroca[1].trim();
+
+            const mResumo = contentStr.match(/(?:Resumo da Negociação)[:\s*"\n\r]+([^"]+)/i);
+            if (mResumo && !dados.resumo) dados.resumo = mResumo[1].trim();
+        }
+
+        // Extrações complementares avulsas
+        if (!dados.cpf) {
+            const mCpfSolto = contentStr.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/);
+            if (mCpfSolto) dados.cpf = mCpfSolto[0].trim();
+        }
+        if (!dados.nascimento) {
+            const mNascSolto = contentStr.match(/\b(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])\/(19\d\d|20\d\d)\b/);
+            if (mNascSolto) dados.nascimento = mNascSolto[0].trim();
+        }
+    }
+
+    return dados;
+}
+
 // ─── Motor de Avalista (Recuperação de Fichas) ────────────────────
 async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) {
     if (!activePool) return { ok: false, error: 'Sem banco' };
@@ -1850,21 +2010,67 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
 
     const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
     const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
-    const evoInst = process.env.EVOLUTION_INSTANCE || 'O%20melhor%20vendedor%20on-line%20IAGO';
+    const rawInst = process.env.EVOLUTION_INSTANCE || 'O melhor vendedor on-line IAGO';
+    const evoInst = encodeURIComponent(rawInst);
     const grupoEscalacao = '120363427065498229@g.us';
 
     let envioOk = false;
+    let tipoEnviadoEfetivo = formato;
 
-    if (formato === 'audio' && config.audio_url) {
-        const evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
-            method: 'POST',
-            headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                number: telClean,
-                audio: config.audio_url
-            })
-        });
-        envioOk = evoRes.ok;
+    if (formato === 'audio') {
+        let audioPayload = config.audio_url;
+
+        // Se não houver arquivo/URL pré-gravado, sintetiza com IA do Iago
+        if (!audioPayload) {
+            console.log(`🎙️ Gerando áudio humanizado do Iago para ${nomeValido || telClean}...`);
+            audioPayload = await sintetizarAudioTTS(textoFinal, 'onyx');
+        }
+
+        if (audioPayload) {
+            try {
+                console.log(`📤 Enviando áudio WhatsApp via Evolution para +${telClean}...`);
+                const evoRes = await fetch(`${evoUrl}/message/sendWhatsAppAudio/${evoInst}`, {
+                    method: 'POST',
+                    headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        number: telClean,
+                        audio: audioPayload
+                    })
+                });
+
+                envioOk = evoRes.ok;
+                if (!evoRes.ok) {
+                    const errTxt = await evoRes.text();
+                    console.error('❌ Falha sendWhatsAppAudio Evolution:', evoRes.status, errTxt);
+                    // Fallback para texto caso a Evolution recuse o áudio
+                    const evoFallback = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+                        method: 'POST',
+                        headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ number: telClean, text: textoFinal })
+                    });
+                    envioOk = evoFallback.ok;
+                    tipoEnviadoEfetivo = 'texto (fallback)';
+                }
+            } catch (errAudio) {
+                console.error('❌ Exceção ao enviar áudio:', errAudio.message);
+                const evoFallback = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+                    method: 'POST',
+                    headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number: telClean, text: textoFinal })
+                });
+                envioOk = evoFallback.ok;
+                tipoEnviadoEfetivo = 'texto (fallback)';
+            }
+        } else {
+            console.log('⚠️ Sem áudio disponível, enviando texto como contingência...');
+            const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
+                method: 'POST',
+                headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number: telClean, text: textoFinal })
+            });
+            envioOk = evoRes.ok;
+            tipoEnviadoEfetivo = 'texto';
+        }
     } else {
         const evoRes = await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
             method: 'POST',
@@ -1902,10 +2108,10 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
     await activePool.query(`
         INSERT INTO crm_avalista_envios (telefone, nome_cliente, tipo_envio, mensagem, status, enviado_em)
         VALUES ($1, $2, $3, $4, 'enviado', NOW())
-    `, [telClean, nomeValido || telClean, formato, textoFinal]);
+    `, [telClean, nomeValido || telClean, tipoEnviadoEfetivo, textoFinal]);
 
     try {
-        const textoGrupo = `🤝 *AVALISTA SOLICITADO:* Mensagem de Avalista/Novo Nome (${formato}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! O robô pausou e o lead foi direcionado para o vendedor humano dar continuidade. 🚗`;
+        const textoGrupo = `🤝 *AVALISTA SOLICITADO:* Mensagem de Avalista/Novo Nome (${tipoEnviadoEfetivo}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! O robô pausou e o lead foi direcionado para o vendedor humano dar continuidade. 🚗`;
         await fetch(`${evoUrl}/message/sendText/${evoInst}`, {
             method: 'POST',
             headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
@@ -1918,7 +2124,7 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
         console.error('Erro ao avisar grupo:', e.message);
     }
 
-    return { ok: true, formato, textoFinal };
+    return { ok: true, formato: tipoEnviadoEfetivo, textoFinal };
 }
 
 // Endpoints Avalista
@@ -1950,6 +2156,24 @@ app.patch('/api/avalista/config', authMiddleware, async (req, res) => {
             WHERE loja_id = 1
         `, [formato_envio, mensagem, audio_url]);
         res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Prévia do Áudio gerado pelo Iago (para escutar no painel)
+app.post('/api/avalista/preview-audio', authMiddleware, async (req, res) => {
+    try {
+        const { mensagem, nome = 'Amigo' } = req.body || {};
+        const textoBase = mensagem || 'Oi {nome}! Tudo bem?\n\nDei uma olhada aqui com a nossa equipe e pelo primeiro nome que você passou o sistema bancário não liberou a aprovação de primeira. Você teria algum outro nome de confiança para a gente rodar a ficha?';
+        const textoFinal = aplicarTemplateMensagem(textoBase, nome);
+        
+        const audioBase64 = await sintetizarAudioTTS(textoFinal, 'onyx');
+        if (!audioBase64) {
+            return res.status(500).json({ error: 'Não foi possível sintetizar o áudio no momento.' });
+        }
+
+        res.json({ ok: true, audio_data: `data:audio/mp3;base64,${audioBase64}` });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -2004,6 +2228,90 @@ app.post('/api/avalista/enviar-todos', authMiddleware, async (req, res) => {
             enviados++;
         }
         res.json({ ok: true, total: enviados });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── Fichas Aprovadas & Compras À Vista ───────────────────────────
+app.get('/api/aprovados/leads', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { tipo, busca } = req.query; // 'todos', 'aprovado', 'a_vista'
+
+        let where = ['l.loja_id = $1'];
+        let params = [lojaId];
+        let pIdx = 2;
+
+        if (tipo === 'aprovado') {
+            where.push(`l.etiqueta = 'aprovado'`);
+        } else if (tipo === 'a_vista') {
+            where.push(`l.etiqueta = 'a_vista'`);
+        } else {
+            where.push(`l.etiqueta IN ('aprovado', 'a_vista')`);
+        }
+
+        if (busca) {
+            where.push(`(l.nome ILIKE $${pIdx} OR l.telefone ILIKE $${pIdx})`);
+            params.push(`%${busca}%`);
+            pIdx++;
+        }
+
+        const query = `
+            SELECT l.*, u.nome as vendedor_nome
+            FROM crm_leads l
+            LEFT JOIN crm_usuarios u ON l.vendedor_id = u.id
+            WHERE ${where.join(' AND ')}
+            ORDER BY COALESCE(l.ultima_interacao, l.criado_em) DESC
+            LIMIT 100
+        `;
+        const result = await activePool.query(query, params);
+
+        // Enriquecer cada lead aprovado com dados da triagem extraídos do histórico
+        const leadsComTriagem = await Promise.all(result.rows.map(async (l) => {
+            const telClean = String(l.telefone || '').replace(/\D/g, '');
+            const hist = await activePool.query(`
+                SELECT message FROM n8n_historico_mensagens
+                WHERE session_id = $1 OR session_id = $2
+                ORDER BY id DESC LIMIT 50
+            `, [l.telefone, telClean]).catch(() => ({ rows: [] }));
+
+            const triagem = extrairDadosTriagem(hist.rows);
+            return {
+                ...l,
+                dados_triagem: triagem
+            };
+        }));
+
+        res.json({ ok: true, leads: leadsComTriagem });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Ação rápida: Alterar status/etiqueta do lead em 1 clique
+app.patch('/api/leads/:telefone/status-rapido', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const { telefone } = req.params;
+        const { etiqueta } = req.body;
+        const telDecoded = decodeURIComponent(telefone);
+        const telClean = telDecoded.replace(/\D/g, '');
+
+        const validas = ['aprovado', 'a_vista', 'fechou', 'com_vendedor', 'novo', 'quente', 'agendado'];
+        if (!validas.includes(etiqueta)) {
+            return res.status(400).json({ error: 'Etiqueta inválida' });
+        }
+
+        await activePool.query(`
+            UPDATE crm_leads
+            SET etiqueta = $1,
+                etapa_funil = $1,
+                ultima_interacao = NOW()
+            WHERE loja_id = $2 AND (telefone = $3 OR telefone = $4)
+        `, [etiqueta, lojaId, telDecoded, telClean]);
+
+        res.json({ ok: true, etiqueta });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
