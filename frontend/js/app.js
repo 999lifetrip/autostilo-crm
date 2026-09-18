@@ -2201,7 +2201,17 @@ async function loadAvalista() {
                     <td>${statusBadge}</td>
                     <td style="font-size:0.8rem; color:var(--text-secondary); max-width:280px;">${msg}</td>
                     <td style="font-size:0.8rem; color:var(--text-secondary);">${dataFmt}</td>
-                    <td>${btnAcao}</td>
+                    <td>
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            ${btnAcao}
+                            <button class="btn btn-sm" onclick="marcarAprovadoDireto('${tel}')" style="background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4); font-weight:600; cursor:pointer;" title="Aprovar Ficha deste cliente">
+                                ✅ Aprovado
+                            </button>
+                            <button class="btn btn-sm" onclick="marcarAVistaDireto('${tel}')" style="background:rgba(234,179,8,0.2); color:#facc15; border:1px solid rgba(234,179,8,0.4); font-weight:600; cursor:pointer;" title="Marcar como Compra À Vista">
+                                💵 À Vista
+                            </button>
+                        </div>
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -2269,6 +2279,38 @@ window.dispararAvalistaIndividual = async (telefone, nome) => {
 window.reenviarAvalista = async (telefone, nome) => {
     if (!confirm(`Deseja reenviar a mensagem de avalista para +${telefone}?`)) return;
     await window.dispararAvalistaIndividual(telefone, nome);
+};
+
+window.marcarAprovadoDireto = async (tel) => {
+    try {
+        toast(`Aprovando ficha de +${tel}...`);
+        await api(`/leads/${encodeURIComponent(tel)}/status-rapido`, {
+            method: 'PATCH',
+            body: { etiqueta: 'aprovado' }
+        });
+        toast(`✅ Ficha aprovada com sucesso para +${tel}! Cliente movido para Fichas Aprovadas.`);
+        await loadAvalista();
+        const badgeAprov = document.getElementById('badgeAprovados');
+        if (badgeAprov) badgeAprov.textContent = parseInt(badgeAprov.textContent || '0') + 1;
+    } catch(e) {
+        toast('Erro ao aprovar: ' + e.message, 'error');
+    }
+};
+
+window.marcarAVistaDireto = async (tel) => {
+    try {
+        toast(`Registrando compra à vista para +${tel}...`);
+        await api(`/leads/${encodeURIComponent(tel)}/status-rapido`, {
+            method: 'PATCH',
+            body: { etiqueta: 'a_vista' }
+        });
+        toast(`💵 Compra À Vista registrada para +${tel}! Cliente movido para Fichas Aprovadas.`);
+        await loadAvalista();
+        const badgeAprov = document.getElementById('badgeAprovados');
+        if (badgeAprov) badgeAprov.textContent = parseInt(badgeAprov.textContent || '0') + 1;
+    } catch(e) {
+        toast('Erro ao marcar à vista: ' + e.message, 'error');
+    }
 };
 
 document.getElementById('btnDispararAvalistaTodos')?.addEventListener('click', async () => {
