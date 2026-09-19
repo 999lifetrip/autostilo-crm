@@ -2,11 +2,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copia o backend
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install --production
+# Instala dependências tanto na raiz quanto na pasta backend
+COPY package.json ./
+COPY backend/package.json ./backend/
 
-# Copia tudo
+RUN npm install --omit=dev && cd backend && npm install --omit=dev
+
+# Copia todos os arquivos do projeto
 COPY . .
 
 WORKDIR /app/backend
