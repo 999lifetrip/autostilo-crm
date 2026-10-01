@@ -84,6 +84,8 @@ const ETIQUETAS = {
     perdeu: { emoji: '❌', label: 'Perdeu', cls: 'badge-perdeu' },
     aguardando: { emoji: '🕐', label: 'Aguardando', cls: 'badge-aguardando' },
     com_vendedor: { emoji: '👤', label: 'Com Vendedor', cls: 'badge-perdeu' },
+    eduardo: { emoji: '👨‍💼', label: 'Eduardo', cls: 'badge-quente' },
+    tharlys: { emoji: '👨‍💼', label: 'Tharlys', cls: 'badge-agendado' },
     em_atendimento: { emoji: '💬', label: 'Em Atendimento', cls: 'badge-quente' },
     reprovado_pedir_nome: { emoji: '🤝', label: 'Pedir Avalista', cls: 'badge-perdeu' },
 };
@@ -359,12 +361,19 @@ function renderLeadsTable(leads) {
     const tbody = document.getElementById('leadsTableBody');
     if (!tbody) return;
     if (!leads || !leads.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="table-loading">Nenhum lead encontrado</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="table-loading">Nenhum lead encontrado</td></tr>`;
         return;
     }
     tbody.innerHTML = leads.map(l => {
         const rawMsg = l.ultima_mensagem || '—';
         const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
+
+        const cNome = String(l.vendedor_nome || (l.etiqueta === 'eduardo' ? 'Eduardo' : (l.etiqueta === 'tharlys' ? 'Tharlys' : ''))).trim();
+        const consultorBadge = cNome.toLowerCase().includes('eduardo')
+            ? `<span class="badge" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);font-weight:600;padding:4px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Eduardo</span>`
+            : cNome.toLowerCase().includes('tharlys')
+            ? `<span class="badge" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-weight:600;padding:4px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Tharlys</span>`
+            : `<span style="color:var(--text-muted);font-size:0.8rem;padding:2px 6px;">—</span>`;
 
         return `
             <tr onclick="openLead('${encodeURIComponent(l.telefone)}')">
@@ -376,6 +385,9 @@ function renderLeadsTable(leads) {
                             <div class="lead-phone">${formatTel(l.telefone)}</div>
                         </div>
                     </div>
+                </td>
+                <td>
+                    ${consultorBadge}
                 </td>
                 <td>
                     <button class="ia-toggle-btn ${l.ia_ativa ? 'ia-on' : 'ia-off'}" 
@@ -530,16 +542,37 @@ function renderLeadModal(lead, historico = [], audios = [], veiculosFotos = [], 
         etiquetaGrid.innerHTML = Object.entries(ETIQUETAS).map(([k, v]) =>
             `<button class="etiqueta-btn ${lead.etiqueta === k ? 'active-etiqueta' : ''}" data-etiqueta="${k}">${v.emoji} ${v.label}</button>`
         ).join('');
+        const sel = document.getElementById('vendedorSelect');
+        sel.innerHTML = `<option value="">— Sem vendedor —</option>` +
+            usuarios.map(u => `<option value="${u.id}" ${lead.vendedor_id === u.id ? 'selected' : ''}>${u.nome}</option>`).join('');
+
         etiquetaGrid.querySelectorAll('.etiqueta-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 etiquetaGrid.querySelectorAll('.etiqueta-btn').forEach(b => b.classList.remove('active-etiqueta'));
                 btn.classList.add('active-etiqueta');
+                
+                // Auto-selecionar o consultor correspondente no select
+                const tag = btn.dataset.etiqueta;
+                if (tag === 'eduardo' || tag === 'tharlys') {
+                    const uMatch = usuarios.find(u => u.nome.toLowerCase().includes(tag));
+                    if (uMatch) sel.value = uMatch.id;
+                }
             });
         });
 
-        const sel = document.getElementById('vendedorSelect');
-        sel.innerHTML = `<option value="">— Sem vendedor —</option>` +
-            usuarios.map(u => `<option value="${u.id}" ${lead.vendedor_id === u.id ? 'selected' : ''}>${u.nome}</option>`).join('');
+        // Quando mudar o consultor no select, seleciona automaticamente a etiqueta dele
+        sel.onchange = () => {
+            const uSelected = usuarios.find(u => String(u.id) === String(sel.value));
+            if (uSelected) {
+                const nLower = uSelected.nome.toLowerCase();
+                const targetTag = nLower.includes('eduardo') ? 'eduardo' : (nLower.includes('tharlys') ? 'tharlys' : null);
+                if (targetTag) {
+                    etiquetaGrid.querySelectorAll('.etiqueta-btn').forEach(b => {
+                        b.classList.toggle('active-etiqueta', b.dataset.etiqueta === targetTag);
+                    });
+                }
+            }
+        };
 
         document.getElementById('anotacoesInput').value = lead.anotacoes || '';
 
@@ -2189,7 +2222,7 @@ async function loadAvalista() {
                 : `<span class="badge" style="background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3);">⏳ Pendente Envio</span>`;
 
             const btnAcao = jaEnviado
-                ? `<button class="btn btn-ghost btn-sm" onclick="reenviarAvalista('${tel}', '${escapeHtml(l.nome || '')}')" title="Reenviar pedido de avalista">🔄 Reenviar</button>`
+                ? `<span style="font-size:0.75rem; color:#94a3b8; font-weight:600; padding:4px 8px; background:rgba(255,255,255,0.05); border-radius:4px;">✅ Já Enviado (Único)</span>`
                 : `<button class="btn btn-primary btn-sm" onclick="dispararAvalistaIndividual('${tel}', '${escapeHtml(l.nome || '')}')">⚡ Pedir Novo Nome</button>`;
 
             return `
@@ -2510,6 +2543,365 @@ document.getElementById('buscaAprovadosInput')?.addEventListener('input', (e) =>
 });
 
 document.getElementById('btnAtualizarAprovados')?.addEventListener('click', loadAprovados);
+
+// ═══════════════════════════════════════════════════════════════
+// 🤖 EDITOR DO ROBÔ (IA) — IMPLEMENTAÇÃO COMPLETA
+// ═══════════════════════════════════════════════════════════════
+
+let iaEditorState = {
+    promptAtual: '',
+    metadata: null,
+    chatHistorico: [],
+    refinadoTemporario: null,
+    carregado: false
+};
+
+function updateCharCount() {
+    const textarea = document.getElementById('promptTextarea');
+    const pill = document.getElementById('promptCharCount');
+    if (textarea && pill) {
+        pill.textContent = `${textarea.value.length} caracteres`;
+    }
+}
+
+function formatChatMessage(text) {
+    if (!text) return '';
+    return escapeHtml(text)
+        .replace(/\n/g, '<br>')
+        .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+        .replace(/_(.*?)_/g, '<em>$1</em>')
+        .replace(/`(.*?)`/g, '<code style="background:rgba(255,255,255,0.1);padding:2px 4px;border-radius:4px;">$1</code>');
+}
+
+async function loadIaPrompt() {
+    try {
+        const res = await api('/ia/prompt');
+        iaEditorState.promptAtual = res.prompt || '';
+        iaEditorState.metadata = res.metadata || {};
+
+        const promptTextarea = document.getElementById('promptTextarea');
+        if (promptTextarea) {
+            promptTextarea.value = iaEditorState.promptAtual;
+            updateCharCount();
+        }
+
+        const versao = res.metadata?.versao || 1;
+        const badge = document.getElementById('promptVersionBadge');
+        if (badge) badge.textContent = `Versão ${versao}`;
+
+        const chatVersao = document.getElementById('chatTreinadorVersao');
+        if (chatVersao) chatVersao.textContent = `Versão ${versao}`;
+
+        await Promise.all([
+            loadChatTreinadorHistorico(),
+            loadPromptHistorico()
+        ]);
+
+        iaEditorState.carregado = true;
+    } catch (e) {
+        console.error('Erro ao carregar prompt da IA:', e);
+        toast('Erro ao carregar configurações da IA: ' + e.message, 'error');
+    }
+}
+
+async function loadChatTreinadorHistorico() {
+    const bodyEl = document.getElementById('chatTreinadorMessages');
+    if (!bodyEl) return;
+
+    try {
+        const res = await api('/ia/chat-treinador/historico');
+        const msgs = res.historico || [];
+        iaEditorState.chatHistorico = msgs;
+
+        if (msgs.length === 0) {
+            bodyEl.innerHTML = `
+                <div class="ia-bubble assistant">
+                    Olá! Eu sou o <strong>Iago</strong>, consultor virtual da loja. 🤖<br><br>
+                    Você pode conversar comigo para testar minhas respostas ou me dar <strong>ordens diretas</strong> sobre o que mudar no atendimento (ex: <em>"A partir de agora informe que aceitamos motos na troca"</em>).
+                    <div class="ia-bubble-meta">Sistema</div>
+                </div>
+            `;
+            return;
+        }
+
+        bodyEl.innerHTML = msgs.map(m => `
+            <div class="ia-bubble ${m.role}">
+                ${formatChatMessage(m.content)}
+                ${m.alterou_prompt ? '<div class="ia-bubble-alert-update">✨ Instruções do robô atualizadas no WhatsApp!</div>' : ''}
+                <div class="ia-bubble-meta">${m.role === 'user' ? 'Você' : 'Iago'} • ${m.horario || ''}</div>
+            </div>
+        `).join('');
+
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+    } catch(e) {
+        bodyEl.innerHTML = `<div class="text-muted p-sm">Não foi possível carregar o histórico: ${e.message}</div>`;
+    }
+}
+
+async function enviarOrdemTreinador() {
+    const input = document.getElementById('inputOrdemTreinador');
+    const msg = input?.value.trim();
+    if (!msg) return;
+
+    const bodyEl = document.getElementById('chatTreinadorMessages');
+    input.value = '';
+
+    // Adiciona bolha do usuário
+    const userBubble = document.createElement('div');
+    userBubble.className = 'ia-bubble user';
+    userBubble.innerHTML = `${formatChatMessage(msg)}<div class="ia-bubble-meta">Você • Agora</div>`;
+    bodyEl.appendChild(userBubble);
+
+    // Bolha de digitação
+    const loadingBubble = document.createElement('div');
+    loadingBubble.className = 'ia-bubble assistant';
+    loadingBubble.id = 'treinadorTyping';
+    loadingBubble.innerHTML = `<em>Iago está pensando e ajustando as regras... ⏳</em>`;
+    bodyEl.appendChild(loadingBubble);
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+
+    try {
+        const res = await api('/ia/chat-treinador', {
+            method: 'POST',
+            body: { mensagem: msg }
+        });
+
+        loadingBubble.remove();
+
+        const assistantBubble = document.createElement('div');
+        assistantBubble.className = 'ia-bubble assistant';
+        assistantBubble.innerHTML = `
+            ${formatChatMessage(res.resposta || 'Ordem processada com sucesso!')}
+            ${res.alterou_prompt ? '<div class="ia-bubble-alert-update">✨ Instruções do robô atualizadas no WhatsApp!</div>' : ''}
+            <div class="ia-bubble-meta">Iago • Agora</div>
+        `;
+        bodyEl.appendChild(assistantBubble);
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+
+        if (res.alterou_prompt && res.prompt_refinado) {
+            iaEditorState.promptAtual = res.prompt_refinado;
+            const promptTextarea = document.getElementById('promptTextarea');
+            if (promptTextarea) {
+                promptTextarea.value = res.prompt_refinado;
+                updateCharCount();
+            }
+            toast('✅ Regra incorporada ao robô no WhatsApp com sucesso!');
+            await loadIaPrompt();
+        }
+    } catch(e) {
+        loadingBubble.remove();
+        toast('Erro ao processar ordem com o Iago: ' + e.message, 'error');
+    }
+}
+
+async function salvarPromptManual() {
+    const promptTextarea = document.getElementById('promptTextarea');
+    const text = promptTextarea?.value.trim();
+    if (!text) {
+        toast('O prompt não pode estar vazio', 'warning');
+        return;
+    }
+
+    try {
+        const res = await api('/ia/prompt', {
+            method: 'POST',
+            body: {
+                prompt_text: text,
+                notas: 'Edição direta via painel CRM'
+            }
+        });
+
+        toast('💾 Prompt publicado com sucesso no WhatsApp!');
+        iaEditorState.promptAtual = text;
+        const versao = res.metadata?.versao || 1;
+        const badge = document.getElementById('promptVersionBadge');
+        if (badge) badge.textContent = `Versão ${versao}`;
+        const chatVersao = document.getElementById('chatTreinadorVersao');
+        if (chatVersao) chatVersao.textContent = `Versão ${versao}`;
+        await loadPromptHistorico();
+    } catch(e) {
+        toast('Erro ao salvar prompt: ' + e.message, 'error');
+    }
+}
+
+async function loadPromptHistorico() {
+    const select = document.getElementById('selectHistoricoPrompt');
+    if (!select) return;
+
+    try {
+        const res = await api('/ia/prompt/historico');
+        const list = res.historico || [];
+        select.innerHTML = '<option value="">⏮️ Histórico de Versões...</option>';
+        list.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = `V${v.versao} (${new Date(v.criado_em).toLocaleDateString('pt-BR')}) - ${v.notas || 'Atualização'}`;
+            select.appendChild(opt);
+        });
+    } catch(e) {}
+}
+
+async function reverterPrompt(id) {
+    if (!id) return;
+    if (!confirm('Deseja reverter para esta versão anterior do prompt?')) return;
+
+    try {
+        await api('/ia/prompt/reverter', {
+            method: 'POST',
+            body: { id }
+        });
+        toast('Versão restaurada com sucesso!');
+        await loadIaPrompt();
+    } catch(e) {
+        toast('Erro ao reverter prompt: ' + e.message, 'error');
+    }
+}
+
+async function refinarPromptComIa() {
+    const input = document.getElementById('sugestaoIaInput');
+    const sugestao = input?.value.trim();
+    if (!sugestao) {
+        toast('Digite uma sugestão para a IA', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btnRefinarPrompt');
+    const btnText = document.getElementById('btnRefinarText');
+    const spinner = document.getElementById('btnRefinarSpinner');
+    btn.disabled = true;
+    if (btnText) btnText.textContent = 'Processando com IA...';
+    spinner?.classList.remove('hidden');
+
+    try {
+        const res = await api('/ia/prompt/refinar', {
+            method: 'POST',
+            body: {
+                sugestao,
+                prompt_atual: document.getElementById('promptTextarea')?.value || ''
+            }
+        });
+
+        iaEditorState.refinadoTemporario = res.prompt_refinado;
+        const resumoEl = document.getElementById('iaRefinarResumo');
+        if (resumoEl) resumoEl.textContent = res.resumo_alteracoes || 'Alterações preparadas pela IA com base na sua solicitação.';
+        document.getElementById('iaRefinarResult')?.classList.remove('hidden');
+    } catch(e) {
+        toast('Erro ao refinar prompt: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        if (btnText) btnText.textContent = '✨ Refinar Prompt com IA';
+        spinner?.classList.add('hidden');
+    }
+}
+
+// Inicialização dos eventos do IA Editor
+function initIaEditorEvents() {
+    // 1. Navegação de Abas
+    const tabs = [
+        { btn: 'tabModoChat', view: 'viewModoChat' },
+        { btn: 'tabModoVisual', view: 'viewModoVisual' },
+        { btn: 'tabModoAvancado', view: 'viewModoAvancado' }
+    ];
+
+    tabs.forEach(({ btn, view }) => {
+        document.getElementById(btn)?.addEventListener('click', () => {
+            tabs.forEach(t => {
+                document.getElementById(t.btn)?.classList.remove('active');
+                document.getElementById(t.view)?.classList.add('hidden');
+            });
+            document.getElementById(btn)?.classList.add('active');
+            document.getElementById(view)?.classList.remove('hidden');
+        });
+    });
+
+    // 2. Chat Treinador
+    document.getElementById('btnEnviarOrdemTreinador')?.addEventListener('click', enviarOrdemTreinador);
+    document.getElementById('inputOrdemTreinador')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            enviarOrdemTreinador();
+        }
+    });
+
+    document.getElementById('btnLimparChatTreinador')?.addEventListener('click', async () => {
+        if (!confirm('Deseja limpar todo o histórico de conversas com o Iago?')) return;
+        try {
+            await api('/ia/chat-treinador/limpar', { method: 'POST' });
+            toast('Histórico de conversas limpo.');
+            await loadChatTreinadorHistorico();
+        } catch(e) {
+            toast('Erro ao limpar histórico: ' + e.message, 'error');
+        }
+    });
+
+    // 3. Salvar Prompt Manual
+    document.getElementById('btnSalvarPrompt')?.addEventListener('click', salvarPromptManual);
+
+    // 4. Contador de caracteres no textarea
+    document.getElementById('promptTextarea')?.addEventListener('input', updateCharCount);
+
+    // 5. Histórico e Reversão
+    document.getElementById('selectHistoricoPrompt')?.addEventListener('change', (e) => {
+        if (e.target.value) {
+            reverterPrompt(e.target.value);
+        }
+    });
+
+    // 6. Restaurar padrão de fábrica
+    document.getElementById('btnRestaurarPadrao')?.addEventListener('click', async () => {
+        if (!confirm('Atenção: deseja resetar o prompt para a versão padrão de fábrica do Iago?')) return;
+        try {
+            await api('/ia/prompt', {
+                method: 'POST',
+                body: { prompt_text: 'RESTAURAR_PADRAO', notas: 'Restauração de padrão de fábrica' }
+            });
+            toast('Prompt padrão restaurado!');
+            await loadIaPrompt();
+        } catch(e) {
+            toast('Erro ao restaurar padrão: ' + e.message, 'error');
+        }
+    });
+
+    // 7. Assistente de Sugestões com IA
+    document.getElementById('btnRefinarPrompt')?.addEventListener('click', refinarPromptComIa);
+    document.getElementById('btnDesfazerRefinamento')?.addEventListener('click', () => {
+        iaEditorState.refinadoTemporario = null;
+        document.getElementById('iaRefinarResult')?.classList.add('hidden');
+    });
+
+    document.getElementById('btnAplicarESalvar')?.addEventListener('click', async () => {
+        if (!iaEditorState.refinadoTemporario) return;
+        const promptTextarea = document.getElementById('promptTextarea');
+        if (promptTextarea) {
+            promptTextarea.value = iaEditorState.refinadoTemporario;
+            updateCharCount();
+        }
+        document.getElementById('iaRefinarResult')?.classList.add('hidden');
+        await salvarPromptManual();
+    });
+
+    // 8. Controles do Painel Visual
+    document.querySelectorAll('.tone-card').forEach(card => {
+        card.addEventListener('click', () => {
+            document.querySelectorAll('.tone-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            toast(`Tom de voz ajustado para: ${card.querySelector('.tone-title')?.textContent}`);
+        });
+    });
+
+    document.querySelectorAll('.btn-quick-tag').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const input = document.getElementById('promoTextoInput');
+            if (input) {
+                input.value = btn.dataset.tag;
+                toast('Promoção aplicada na sugestão!');
+            }
+        });
+    });
+}
+
+// Inicializa os ouvintes do IA Editor
+initIaEditorEvents();
 
 // ─── Boot ──────────────────────────────────────────────────────
 checkAuth();
