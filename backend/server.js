@@ -20,6 +20,8 @@ let activeHost = null;
 
 const candidateHosts = [
     process.env.DB_HOST,
+    '127.0.0.1',
+    'localhost',
     '172.17.0.1',
     '187.127.0.79',
     'host.docker.internal',
@@ -33,8 +35,8 @@ async function tryConnectHost(host) {
         host,
         port: parseInt(process.env.DB_PORT || '5432'),
         database: process.env.DB_NAME || 'n8n',
-        user: process.env.DB_USER || 'n8n',
-        password: process.env.DB_PASSWORD || '',
+        user: process.env.DB_USER || 'admin',
+        password: process.env.DB_PASSWORD || 'senha123',
         ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
         connectionTimeoutMillis: 4000,
     });
@@ -156,6 +158,19 @@ async function initTables() {
             );
             console.log('✅ Loja e admin padrão criados (admin@autostilocar.com.br / admin123)');
         }
+
+        // Garante a existência dos consultores Eduardo e Tharlys
+        const hashPadrao = await bcrypt.hash('admin123', 10);
+        await pool.query(`
+            INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role, ativo)
+            VALUES (1, 'Eduardo', 'eduardo@autostilocar.com.br', $1, 'vendedor', true)
+            ON CONFLICT (email) DO NOTHING
+        `, [hashPadrao]);
+        await pool.query(`
+            INSERT INTO crm_usuarios (loja_id, nome, email, senha_hash, role, ativo)
+            VALUES (1, 'Tharlys', 'tharlys@autostilocar.com.br', $1, 'vendedor', true)
+            ON CONFLICT (email) DO NOTHING
+        `, [hashPadrao]);
         dbConnected = true;
         dbError = null;
     } catch (e) {
@@ -273,9 +288,15 @@ app.get('/api/leads', authMiddleware, async (req, res) => {
             paramIdx++;
         }
         if (etiqueta && etiqueta !== 'todos') {
-            where.push(`l.etiqueta = $${paramIdx}`);
-            params.push(etiqueta);
-            paramIdx++;
+            if (etiqueta === 'eduardo') {
+                where.push(`(l.etiqueta = 'eduardo' OR l.vendedor_id = 3)`);
+            } else if (etiqueta === 'tharlys') {
+                where.push(`(l.etiqueta = 'tharlys' OR l.vendedor_id = 4)`);
+            } else {
+                where.push(`l.etiqueta = $${paramIdx}`);
+                params.push(etiqueta);
+                paramIdx++;
+            }
         }
         if (ia_ativa !== undefined) {
             where.push(`l.ia_ativa = $${paramIdx}`);
@@ -520,7 +541,26 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
     try {
         const { lojaId } = req.user;
         const { telefone } = req.params;
-        const { ia_ativa, etiqueta, vendedor_id, anotacoes, nome } = req.body;
+        let { ia_ativa, etiqueta, vendedor_id, anotacoes, nome } = req.body;
+
+        // Sincronização automática entre Consultor e Etiqueta
+        if (vendedor_id !== undefined && vendedor_id !== null && vendedor_id !== '') {
+            const vRes = await activePool.query('SELECT nome FROM crm_usuarios WHERE id = $1', [vendedor_id]);
+            const vNome = (vRes.rows[0]?.nome || '').toLowerCase();
+            if (vNome.includes('eduardo') && (!etiqueta || etiqueta === 'com_vendedor' || etiqueta === 'tharlys')) {
+                etiqueta = 'eduardo';
+            } else if (vNome.includes('tharlys') && (!etiqueta || etiqueta === 'com_vendedor' || etiqueta === 'eduardo')) {
+                etiqueta = 'tharlys';
+            }
+        } else if (etiqueta === 'eduardo' || etiqueta === 'tharlys') {
+            const vRes = await activePool.query(
+                `SELECT id FROM crm_usuarios WHERE LOWER(nome) LIKE $1 AND loja_id = $2 LIMIT 1`,
+                [`%${etiqueta}%`, lojaId]
+            );
+            if (vRes.rows.length) {
+                vendedor_id = vRes.rows[0].id;
+            }
+        }
 
         const current = await activePool.query(
             'SELECT * FROM crm_leads WHERE loja_id = $1 AND telefone = $2',
@@ -557,7 +597,30 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
             ).catch(() => {});
         }
 
-        res.json({ lead: updated.rows[0] });
+        const updatedLead = updated.rows[0];
+        const telLimpo = String(updatedLead.telefone || '').replace(/\D/g, '');
+
+        // Sincronizar etiqueta no WhatsApp automaticamente
+        if (etiqueta) {
+            if (etiqueta === 'simulacao') {
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.SIMULACAO, 'add');
+            } else if (etiqueta === 'pedido_avalista' || etiqueta === 'reprovado_pedir_nome') {
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.SIMULACAO, 'remove');
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.PEDIR_AVALISTA, 'add');
+            } else if (etiqueta === 'aprovado') {
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.SIMULACAO, 'remove');
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.PEDIR_AVALISTA, 'remove');
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.APROVADA, 'add');
+            } else if (etiqueta === 'eduardo') {
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.THARLYS, 'remove');
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.EDUARDO, 'add');
+            } else if (etiqueta === 'tharlys') {
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.EDUARDO, 'remove');
+                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.THARLYS, 'add');
+            }
+        }
+
+        res.json({ lead: updatedLead });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -955,6 +1018,32 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
 
         const data = await response.json();
         if (!response.ok) return res.status(400).json({ error: 'Erro ao enviar', detail: data });
+
+        // Quando o consultor responder pelo CRM, coloca a etiqueta dele automaticamente caso o lead ainda não tenha dono
+        if (req.user && activePool) {
+            const userId = req.user.id;
+            const uRes = await activePool.query('SELECT nome FROM crm_usuarios WHERE id = $1', [userId]);
+            const uNome = (uRes.rows[0]?.nome || '').toLowerCase();
+            const tagVendedor = uNome.includes('eduardo') ? 'eduardo' : (uNome.includes('tharlys') ? 'tharlys' : null);
+
+            if (tagVendedor) {
+                // Apenas atribui se o lead NÃO pertencer ao outro vendedor (preserva o titular)
+                await activePool.query(`
+                    UPDATE crm_leads
+                    SET vendedor_id = COALESCE(vendedor_id, $1),
+                        etiqueta = CASE 
+                            WHEN vendedor_id IS NULL OR etiqueta IN ('novo', 'com_vendedor', 'aguardando')
+                            THEN $2
+                            ELSE etiqueta
+                        END,
+                        ia_ativa = false,
+                        ultima_interacao = NOW()
+                    WHERE (telefone = $3 OR telefone = $4)
+                      AND (vendedor_id IS NULL OR vendedor_id = $1)
+                `, [userId, tagVendedor, phone, `+${phone}`]).catch(e => console.error('Erro ao atualizar dono do lead:', e.message));
+            }
+        }
+
         res.json({ ok: true, data });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1889,39 +1978,99 @@ async function getOpenAiApiKey() {
 async function sintetizarAudioTTS(texto, voz = 'onyx') {
     try {
         if (!texto || !texto.trim()) return null;
+
+        // 1. Tenta ElevenLabs com a voz oficial humanizada do Iago
+        try {
+            console.log(`🎙️ [ElevenLabs TTS] Sintetizando voz do Iago para texto (${texto.length} caracteres)...`);
+            const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX', {
+                method: 'POST',
+                headers: {
+                    'xi-api-key': 'sk_d18a706cf61c6c08aceb0300b1b45012e00380cb3c82cd1d',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: texto.slice(0, 1000),
+                    model_id: 'eleven_multilingual_v2',
+                }),
+            });
+
+            if (elevenRes.ok) {
+                const arrayBuf = await elevenRes.arrayBuffer();
+                const base64 = Buffer.from(arrayBuf).toString('base64');
+                console.log(`✅ [ElevenLabs TTS] Áudio do Iago sintetizado com sucesso! Tamanho base64: ${base64.length}`);
+                return base64;
+            } else {
+                console.error('⚠️ [ElevenLabs TTS] Falha:', elevenRes.status, await elevenRes.text());
+            }
+        } catch (e11) {
+            console.error('⚠️ [ElevenLabs TTS] Erro de conexão:', e11.message);
+        }
+
+        // 2. Fallback OpenAI TTS (se ElevenLabs não estiver disponível)
         const apiKey = await getOpenAiApiKey();
-        if (!apiKey) {
-            console.error('❌ Nenhuma chave de API da OpenAI encontrada para TTS.');
-            return null;
+        if (apiKey) {
+            console.log(`🎙️ [OpenAI TTS Fallback] Sintetizando voz com OpenAI...`);
+            const res = await fetch('https://api.openai.com/v1/audio/speech', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'tts-1',
+                    input: texto.slice(0, 1000),
+                    voice: voz || 'onyx'
+                })
+            });
+
+            if (res.ok) {
+                const arrayBuf = await res.arrayBuffer();
+                const base64 = Buffer.from(arrayBuf).toString('base64');
+                console.log(`✅ [OpenAI TTS] Áudio sintetizado com sucesso! Tamanho base64: ${base64.length}`);
+                return base64;
+            }
         }
-
-        console.log(`🎙️ [TTS] Sintetizando voz do Iago (${voz}) para texto (${texto.length} caracteres)...`);
-        const res = await fetch('https://api.openai.com/v1/audio/speech', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: 'tts-1',
-                input: texto.slice(0, 1000), // limite seguro
-                voice: voz // onyx = voz masculina confiante, profissional
-            })
-        });
-
-        if (!res.ok) {
-            const err = await res.text();
-            console.error('❌ Erro na OpenAI TTS:', res.status, err);
-            return null;
-        }
-
-        const arrayBuf = await res.arrayBuffer();
-        const base64 = Buffer.from(arrayBuf).toString('base64');
-        console.log(`✅ [TTS] Áudio sintetizado com sucesso! Tamanho base64: ${base64.length}`);
-        return base64;
+        return null;
     } catch (e) {
         console.error('❌ Exceção ao sintetizar áudio TTS:', e.message);
         return null;
+    }
+}
+
+// ─── Gerenciamento de Etiquetas no WhatsApp via Evolution API ────
+const WHATSAPP_LABELS = {
+    SIMULACAO: '20',
+    PEDIR_AVALISTA: '11',
+    APROVADA: '13',
+    EDUARDO: '33',
+    THARLYS: '34'
+};
+
+async function gerenciarEtiquetaWhatsApp(telefone, labelId, acao = 'add') {
+    try {
+        const telClean = String(telefone || '').replace(/\D/g, '');
+        if (!telClean) return;
+        const evoUrl = process.env.EVOLUTION_API_URL || 'https://evolution.omelhorvendedoronline.com.br';
+        const evoKey = process.env.EVOLUTION_API_KEY || '2AEF40453FD5-4936-99E5-737323144E5C';
+        const rawInst = process.env.EVOLUTION_INSTANCE || 'O melhor vendedor on-line IAGO';
+        const evoInst = encodeURIComponent(rawInst);
+
+        const res = await fetch(`${evoUrl}/label/handleLabel/${evoInst}`, {
+            method: 'POST',
+            headers: { 'apikey': evoKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                number: telClean,
+                labelId: String(labelId),
+                action: acao
+            })
+        });
+        if (res.ok) {
+            console.log(`🏷️ [Etiqueta WhatsApp] ${acao.toUpperCase()} label ${labelId} para +${telClean}: Sucesso`);
+        } else {
+            console.error(`⚠️ [Etiqueta WhatsApp] Erro ${acao} label ${labelId} para +${telClean}:`, await res.text());
+        }
+    } catch (err) {
+        console.error('❌ Exceção ao atualizar etiqueta WhatsApp:', err.message);
     }
 }
 
@@ -2005,13 +2154,31 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
     const telClean = String(telefone || '').replace(/\D/g, '');
     if (!telClean || telClean.length < 10) return { ok: false, error: 'Telefone inválido' };
 
+    // Trava de segurança: apenas 1 envio de avalista por cliente (evita repetições e caos no atendimento)
+    const jaEnviado = await activePool.query(`
+        SELECT id, enviado_em, tipo_envio 
+        FROM crm_avalista_envios 
+        WHERE telefone = $1 OR telefone = $2 
+        LIMIT 1
+    `, [telClean, `+${telClean}`]);
+
+    if (jaEnviado.rows.length > 0) {
+        console.log(`⚠️ Pedido de avalista bloqueado para +${telClean}: já foi enviado anteriormente.`);
+        return {
+            ok: false,
+            error: 'Mensagem de avalista já foi enviada anteriormente para este cliente.',
+            ja_enviado: true,
+            enviado_em: jaEnviado.rows[0].enviado_em
+        };
+    }
+
     const configRes = await activePool.query(`SELECT * FROM crm_avalista_config WHERE loja_id = 1 LIMIT 1`);
     const config = configRes.rows[0] || {
-        formato_envio: 'texto',
+        formato_envio: 'audio',
         mensagem: 'Oi {nome}! Tudo bem?\n\nDei uma olhada aqui com a nossa equipe e pelo primeiro nome que você passou o sistema bancário não liberou a aprovação de primeira. 🚗\n\nVocê teria algum outro nome de confiança (como esposo(a), pai, mãe ou parente) para a gente rodar a ficha e liberar o carro para você?'
     };
 
-    const formato = formatoCustom || config.formato_envio || 'texto';
+    const formato = formatoCustom || config.formato_envio || 'audio';
     const nomeValido = extrairPrimeiroNomeValido(nomeLead);
     const textoFinal = aplicarTemplateMensagem(config.mensagem || '', nomeLead);
 
@@ -2116,6 +2283,11 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
         INSERT INTO crm_avalista_envios (telefone, nome_cliente, tipo_envio, mensagem, status, enviado_em)
         VALUES ($1, $2, $3, $4, 'enviado', NOW())
     `, [telClean, nomeValido || telClean, tipoEnviadoEfetivo, textoFinal]);
+
+    // Atualizar etiquetas no WhatsApp via Evolution API:
+    // Remove "Simulação" (ID 20) e Adiciona "Pedir avalista" (ID 11)
+    await gerenciarEtiquetaWhatsApp(telClean, WHATSAPP_LABELS.SIMULACAO, 'remove');
+    await gerenciarEtiquetaWhatsApp(telClean, WHATSAPP_LABELS.PEDIR_AVALISTA, 'add');
 
     try {
         const textoGrupo = `🤝 *AVALISTA SOLICITADO:* Mensagem de Avalista/Novo Nome (${tipoEnviadoEfetivo}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! O robô pausou e o lead foi direcionado para o vendedor humano dar continuidade. 🚗`;
