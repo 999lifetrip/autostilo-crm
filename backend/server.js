@@ -181,6 +181,16 @@ async function initTables() {
     }
 }
 
+// ─── Etiquetas WhatsApp Evolution API ───────────────────────────────────────
+const WHATSAPP_LABELS = {
+    SIMULACAO: '20',
+    PEDIR_AVALISTA: '11',
+    APROVADA: '13',
+    EDUARDO: '33',
+    THARLYS: '34',
+    AVISTA: '22'
+};
+
 // ─── App ─────────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
@@ -328,6 +338,84 @@ app.get('/api/leads', authMiddleware, async (req, res) => {
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── UPSERT DIRETO DE NOVO LEAD DO WHATSAPP COM ATRIBUIÇÃO AUTOMÁTICA DE CONSULTOR ─
+app.post('/api/leads/upsert-direct', async (req, res) => {
+    try {
+        const { telefone, nome, mensagem } = req.body;
+        if (!telefone) return res.status(400).json({ error: 'Telefone obrigatório' });
+        const telClean = String(telefone).replace(/\D/g, '');
+        if (telClean.length < 8) return res.status(400).json({ error: 'Telefone inválido' });
+
+        // 1. Verifica se lead já existe e se já tem consultor atribuído
+        const check = await activePool.query(
+            'SELECT id, vendedor_id, etiqueta FROM crm_leads WHERE telefone = $1 OR telefone LIKE $2',
+            [telClean, `%${telClean.slice(-8)}`]
+        );
+
+        let vendedorId = check.rows[0]?.vendedor_id;
+        let isNovoVendedor = false;
+        let labelToAdd = null;
+
+        if (!vendedorId || (vendedorId !== 3 && vendedorId !== 4)) {
+            // Distribuição alternada (Round-Robin 50/50 entre Eduardo=3 e Tharlys=4)
+            const countRes = await activePool.query(`
+                SELECT 
+                    COALESCE(SUM(CASE WHEN vendedor_id = 3 THEN 1 ELSE 0 END), 0) as eduardo_count,
+                    COALESCE(SUM(CASE WHEN vendedor_id = 4 THEN 1 ELSE 0 END), 0) as tharlys_count
+                FROM crm_leads
+            `);
+            const eCount = parseInt(countRes.rows[0].eduardo_count) || 0;
+            const tCount = parseInt(countRes.rows[0].tharlys_count) || 0;
+
+            if (eCount <= tCount) {
+                vendedorId = 3; // Eduardo
+                labelToAdd = WHATSAPP_LABELS.EDUARDO; // '33'
+            } else {
+                vendedorId = 4; // Tharlys
+                labelToAdd = WHATSAPP_LABELS.THARLYS; // '34'
+            }
+            isNovoVendedor = true;
+        }
+
+        const consultorEtiqueta = vendedorId === 3 ? 'eduardo' : 'tharlys';
+        const consultorNome = vendedorId === 3 ? 'Eduardo' : 'Tharlys';
+
+        if (check.rows.length === 0) {
+            await activePool.query(`
+                INSERT INTO crm_leads (loja_id, telefone, nome, vendedor_id, etiqueta, ultima_mensagem, ultima_interacao, ia_ativa, total_mensagens)
+                VALUES (1, $1, $2, $3, $4, $5, NOW(), true, 1)
+            `, [telClean, nome || telClean, vendedorId, consultorEtiqueta, mensagem || 'Nova mensagem']);
+        } else {
+            await activePool.query(`
+                UPDATE crm_leads 
+                SET vendedor_id = COALESCE(vendedor_id, $2),
+                    etiqueta = CASE WHEN etiqueta IS NULL OR etiqueta IN ('novo', '') THEN $3 ELSE etiqueta END,
+                    ultima_mensagem = COALESCE($4, ultima_mensagem),
+                    ultima_interacao = NOW(),
+                    total_mensagens = crm_leads.total_mensagens + 1
+                WHERE id = $1
+            `, [check.rows[0].id, vendedorId, consultorEtiqueta, mensagem]);
+        }
+
+        // Se acabou de ser atribuído a um consultor, adiciona IMEDIATAMENTE a etiqueta no WhatsApp via Evolution API!
+        if (isNovoVendedor && labelToAdd) {
+            await gerenciarEtiquetaWhatsApp(telClean, labelToAdd, 'add');
+        }
+
+        res.json({
+            success: true,
+            telefone: telClean,
+            vendedor_id: vendedorId,
+            vendedor_nome: consultorNome,
+            etiqueta: consultorEtiqueta,
+            whatsapp_label_id: labelToAdd
+        });
+    } catch (err) {
+        console.error('Erro /api/leads/upsert-direct:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -2038,13 +2126,6 @@ async function sintetizarAudioTTS(texto, voz = 'onyx') {
 }
 
 // ─── Gerenciamento de Etiquetas no WhatsApp via Evolution API ────
-const WHATSAPP_LABELS = {
-    SIMULACAO: '20',
-    PEDIR_AVALISTA: '11',
-    APROVADA: '13',
-    EDUARDO: '33',
-    THARLYS: '34'
-};
 
 async function gerenciarEtiquetaWhatsApp(telefone, labelId, acao = 'add') {
     try {
