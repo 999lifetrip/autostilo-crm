@@ -382,6 +382,7 @@ app.post('/api/leads/upsert-direct', async (req, res) => {
 
         const consultorEtiqueta = vendedorId === 3 ? 'eduardo' : 'tharlys';
         const consultorNome = vendedorId === 3 ? 'Eduardo' : 'Tharlys';
+        const labelConsultor = vendedorId === 3 ? WHATSAPP_LABELS.EDUARDO : WHATSAPP_LABELS.THARLYS;
 
         if (check.rows.length === 0) {
             await activePool.query(`
@@ -400,10 +401,8 @@ app.post('/api/leads/upsert-direct', async (req, res) => {
             `, [check.rows[0].id, vendedorId, consultorEtiqueta, mensagem]);
         }
 
-        // Se acabou de ser atribuído a um consultor, adiciona IMEDIATAMENTE a etiqueta no WhatsApp via Evolution API!
-        if (isNovoVendedor && labelToAdd) {
-            await gerenciarEtiquetaWhatsApp(telClean, labelToAdd, 'add');
-        }
+        // Garante a etiqueta do consultor SEMPRE no WhatsApp via Evolution API!
+        await gerenciarEtiquetaWhatsApp(telClean, labelConsultor, 'add');
 
         res.json({
             success: true,
@@ -411,7 +410,7 @@ app.post('/api/leads/upsert-direct', async (req, res) => {
             vendedor_id: vendedorId,
             vendedor_nome: consultorNome,
             etiqueta: consultorEtiqueta,
-            whatsapp_label_id: labelToAdd
+            whatsapp_label_id: labelConsultor
         });
     } catch (err) {
         console.error('Erro /api/leads/upsert-direct:', err);
