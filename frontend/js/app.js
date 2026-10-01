@@ -276,13 +276,21 @@ async function loadEscaladosRecentes() {
             const rawMsg = l.ultima_mensagem || 'Cliente solicitou atendimento com consultor';
             const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
 
+            const cNome = String(l.vendedor_nome || (l.etiqueta === 'eduardo' ? 'Eduardo' : (l.etiqueta === 'tharlys' ? 'Tharlys' : ''))).trim();
+            const consultorBadge = cNome.toLowerCase().includes('eduardo')
+                ? `<span class="badge" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);font-weight:600;padding:2px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Eduardo</span>`
+                : cNome.toLowerCase().includes('tharlys')
+                ? `<span class="badge" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-weight:600;padding:2px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Tharlys</span>`
+                : '';
+
             return `
                 <div class="escalado-card-rich" onclick="openLead('${encodeURIComponent(l.telefone)}')">
                     <div class="escalado-main-info">
                         <div class="escalado-avatar">${initials(l.nome || l.telefone)}</div>
                         <div class="escalado-details">
-                            <div class="escalado-title-row">
+                            <div class="escalado-title-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                                 <span class="escalado-nome">${escapeHtml(l.nome || formatTel(l.telefone))}</span>
+                                ${consultorBadge}
                                 ${badgeEtiqueta(l.etiqueta)}
                             </div>
                             <div class="escalado-tel">📱 ${formatTel(l.telefone)}</div>
