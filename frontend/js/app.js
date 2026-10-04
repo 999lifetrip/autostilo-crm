@@ -95,6 +95,26 @@ function badgeEtiqueta(e) {
     return `<span class="badge ${t.cls}">${t.emoji} ${t.label}</span>`;
 }
 
+// Retorna a etiqueta de negócio do lead sem duplicar o nome do consultor
+function getLeadEtiquetaBadge(l) {
+    if (!l) return badgeEtiqueta('novo');
+    const rawTag = String(l.etiqueta || '').toLowerCase().trim();
+    const rawFunil = String(l.etapa_funil || '').toLowerCase().trim();
+
+    // Se a etiqueta for o nome de um consultor (ex: eduardo ou tharlys),
+    // mostra a etapa real do funil para NÃO duplicar a tag do consultor na mesma linha!
+    if (rawTag === 'eduardo' || rawTag === 'tharlys') {
+        if (rawFunil && rawFunil !== 'eduardo' && rawFunil !== 'tharlys') {
+            return badgeEtiqueta(rawFunil);
+        }
+        return l.ia_ativa
+            ? `<span class="badge badge-novo">🆕 Novo</span>`
+            : `<span class="badge" style="background:rgba(234,179,8,0.18);color:#facc15;border:1px solid rgba(234,179,8,0.35);font-weight:600;">💬 Em Atendimento</span>`;
+    }
+
+    return badgeEtiqueta(rawTag || rawFunil || 'novo');
+}
+
 // ─── Clock ─────────────────────────────────────────────────────
 function startClock() {
     const el = document.getElementById('headerTime');
@@ -293,7 +313,7 @@ async function loadEscaladosRecentes() {
                             <div class="escalado-title-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                                 <span class="escalado-nome">${escapeHtml(l.nome || formatTel(l.telefone))}</span>
                                 ${consultorBadge}
-                                ${badgeEtiqueta(l.etiqueta)}
+                                ${getLeadEtiquetaBadge(l)}
                             </div>
                             <div class="escalado-tel">📱 ${formatTel(l.telefone)}</div>
                             <div class="escalado-last-msg">💬 "${escapeHtml(cleanMsg)}"</div>
@@ -408,7 +428,7 @@ function renderLeadsTable(leads) {
                         <span class="ia-toggle-switch"></span>
                     </button>
                 </td>
-                <td>${badgeEtiqueta(l.etiqueta)}</td>
+                <td>${getLeadEtiquetaBadge(l)}</td>
                 <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);font-size:0.8rem">
                     ${escapeHtml(cleanMsg)}
                 </td>
