@@ -206,6 +206,7 @@ function navigate(rawKey) {
     if (key === 'veiculos') loadVeiculos();
     if (key === 'leads') loadLeads();
     if (key === 'dashboard') loadDashboard();
+    if (key === 'simulacoes') loadSimulacoesDashboard();
     if (key === 'iaEditor') loadIaPrompt();
     if (key === 'remarketing') loadRemarketing();
     if (key === 'aprovados') loadAprovados();
@@ -253,6 +254,7 @@ async function loadDashboard() {
 
         loadEscaladosRecentes();
         loadLiveActivity();
+        loadSimulacoesDashboard();
     } catch {}
 }
 
@@ -2910,6 +2912,253 @@ function initIaEditorEvents() {
 
 // Inicializa os ouvintes do IA Editor
 initIaEditorEvents();
+
+// ─── SIMULAÇÕES & STATUS DOS BANCOS ──────────────────────────────
+let simulacoesDashboardData = null;
+
+async function loadSimulacoesDashboard() {
+    try {
+        const data = await api('/simulacoes/dashboard');
+        simulacoesDashboardData = data;
+        const bancos = data.bancos || {};
+        const stats = data.stats || {};
+        const ultimas = data.ultimas || [];
+
+        // 1. Atualiza os Badges Rápidos no Dashboard Principal (#pageDashboard)
+        const quickEl = document.getElementById('simuladoresQuickBadges');
+        if (quickEl) {
+            const bancosList = [
+                { id: 'PAN', nome: 'Banco PAN', logo: '🏦' },
+                { id: 'BV', nome: 'Banco BV', logo: '🏦' },
+                { id: 'ITAU', nome: 'Itaú Credline', logo: '🟧' },
+                { id: 'SANTANDER', nome: 'Santander', logo: '🔴' },
+                { id: 'BRADESCO', nome: 'Bradesco', logo: '🔺' },
+            ];
+
+            quickEl.innerHTML = bancosList.map(b => {
+                const info = bancos[b.id] || { status: 'OPERACIONAL', needsLogin: false };
+                const isOp = !info.needsLogin && info.status === 'OPERACIONAL';
+                const statusBadge = isOp
+                    ? `<span class="badge" style="background:rgba(16,185,129,0.18); color:#34d399; font-weight:600; padding:2px 8px; border:1px solid rgba(16,185,129,0.3); font-size:0.75rem;">🟢 OPERACIONAL</span>`
+                    : `<span class="badge" style="background:rgba(245,158,11,0.18); color:#fbbf24; font-weight:600; padding:2px 8px; border:1px solid rgba(245,158,11,0.3); font-size:0.75rem;">🔒 REQUER LOGIN</span>`;
+
+                return `
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:10px; padding:10px 14px; display:flex; flex-direction:column; gap:6px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:600; font-size:0.9rem; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                                ${b.logo} ${b.nome}
+                            </span>
+                            ${statusBadge}
+                        </div>
+                        <span style="font-size:0.75rem; color:var(--text-secondary); line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(info.motivo || 'Pronto para simulação')}">
+                            ${escapeHtml(info.motivo || 'Pronto para simulação')}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 2. Se a página ativa for #pageSimulacoes, atualiza o painel completo
+        const pageSim = document.getElementById('pageSimulacoes');
+        if (pageSim) {
+            // Stats
+            if (document.getElementById('simStatTotalHoje')) {
+                document.getElementById('simStatTotalHoje').textContent = stats.total_hoje || 0;
+                document.getElementById('simStatAprovados').textContent = stats.aprovados_hoje || 0;
+                document.getElementById('simStatRecusados').textContent = stats.recusados_hoje || 0;
+                document.getElementById('simStatFila').textContent = (parseInt(stats.pendentes || 0) + parseInt(stats.processando || 0));
+            }
+
+            // Grid dos 5 Bancos
+            const gridEl = document.getElementById('gridBancosControle');
+            if (gridEl) {
+                const bancosDetalhes = [
+                    { id: 'PAN', nome: 'Banco PAN', logo: '🏦' },
+                    { id: 'BV', nome: 'Banco BV', logo: '🏦' },
+                    { id: 'ITAU', nome: 'Itaú Credline', logo: '🟧' },
+                    { id: 'SANTANDER', nome: 'Santander Originador', logo: '🔴' },
+                    { id: 'BRADESCO', nome: 'Bradesco Financiamentos', logo: '🔺' },
+                ];
+
+                gridEl.innerHTML = bancosDetalhes.map(b => {
+                    const info = bancos[b.id] || { status: 'OPERACIONAL', needsLogin: false, motivo: '' };
+                    const isOp = !info.needsLogin && info.status === 'OPERACIONAL';
+                    
+                    const cardBorder = isOp ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.4)';
+                    const cardBg = isOp ? 'linear-gradient(180deg, rgba(16,185,129,0.04) 0%, rgba(18,28,23,0.7) 100%)' : 'linear-gradient(180deg, rgba(245,158,11,0.06) 0%, rgba(28,24,18,0.7) 100%)';
+
+                    const badgeHtml = isOp
+                        ? `<span class="badge" style="background:rgba(16,185,129,0.18); color:#34d399; font-weight:700; border:1px solid rgba(16,185,129,0.4);">🟢 OPERACIONAL</span>`
+                        : `<span class="badge" style="background:rgba(245,158,11,0.18); color:#fbbf24; font-weight:700; border:1px solid rgba(245,158,11,0.4);">🔒 AGUARDANDO LOGIN</span>`;
+
+                    const acaoBtn = isOp
+                        ? `<button class="btn btn-ghost btn-sm" onclick="pausarBanco('${b.id}')" style="font-size:0.75rem; color:#f87171;">⏸️ Pausar</button>`
+                        : `<button class="btn btn-primary btn-sm" onclick="reativarBanco('${b.id}')" style="font-size:0.75rem;">🔄 Reativar / Testar</button>`;
+
+                    return `
+                        <div style="border: 1px solid ${cardBorder}; background: ${cardBg}; border-radius:14px; padding:1.15rem; display:flex; flex-direction:column; justify-content:space-between; gap:12px;">
+                            <div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-size:1.3rem;">${b.logo}</span>
+                                        <span style="font-weight:700; font-size:1rem; color:var(--text-primary);">${b.nome}</span>
+                                    </div>
+                                    ${badgeHtml}
+                                </div>
+                                <p style="font-size:0.8rem; color:var(--text-secondary); line-height:1.4; margin-bottom:8px; min-height:36px;">
+                                    ${escapeHtml(info.motivo || 'Pronto e aguardando leads da fila para simular.')}
+                                </p>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
+                                <button class="btn btn-ghost btn-sm" onclick="abrirModalCredenciais('${b.id}', '${b.nome}')" style="font-size:0.75rem; color:var(--text-primary);">
+                                    🔑 Atualizar Acesso
+                                </button>
+                                ${acaoBtn}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Tabela de Simulações
+            const tbody = document.getElementById('simulacoesTableBody');
+            if (tbody) {
+                if (!ultimas.length) {
+                    tbody.innerHTML = '<tr><td colspan="10" class="empty-state" style="padding:2rem; text-align:center;">Nenhuma simulação registrada ainda hoje.</td></tr>';
+                } else {
+                    function formatBankPill(st) {
+                        const s = String(st || '').toUpperCase();
+                        if (s.includes('APROVAD') || s.includes('APTO_VEICULO')) {
+                            return `<span class="badge" style="background:rgba(16,185,129,0.2); color:#34d399; font-size:0.7rem; font-weight:600;">✅ Aprovado</span>`;
+                        }
+                        if (s.includes('AGUARDANDO') || s.includes('LOGIN')) {
+                            return `<span class="badge" style="background:rgba(245,158,11,0.2); color:#fbbf24; font-size:0.7rem; font-weight:600;">🔒 Login</span>`;
+                        }
+                        if (s.includes('RECUSAD') || s.includes('NEGAD')) {
+                            return `<span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171; font-size:0.7rem; font-weight:600;">❌ Recusado</span>`;
+                        }
+                        if (s.includes('PENDENTE')) {
+                            return `<span class="badge" style="background:rgba(59,130,246,0.2); color:#60a5fa; font-size:0.7rem; font-weight:600;">⏳ Pendente</span>`;
+                        }
+                        return `<span class="badge" style="background:rgba(148,163,184,0.15); color:#94a3b8; font-size:0.7rem;">${escapeHtml(st || '—')}</span>`;
+                    }
+
+                    tbody.innerHTML = ultimas.map(sim => {
+                        const telDisplay = formatTel(sim.telefone);
+                        const cleanCpf = sim.cpf ? String(sim.cpf).replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : '—';
+                        const hora = sim.processado_em ? timeAgo(sim.processado_em) : (sim.criado_em ? timeAgo(sim.criado_em) : '—');
+                        const statusGeral = sim.status_geral === 'APROVADO'
+                            ? `<span class="badge" style="background:rgba(16,185,129,0.25); color:#34d399; font-weight:700;">✅ APROVADO</span>`
+                            : (sim.status_geral === 'RECUSADO'
+                                ? `<span class="badge" style="background:rgba(239,68,68,0.25); color:#f87171; font-weight:700;">❌ RECUSADO</span>`
+                                : `<span class="badge" style="background:rgba(245,158,11,0.25); color:#fbbf24; font-weight:700;">${sim.status || 'CONCLUÍDO'}</span>`);
+
+                        return `
+                            <tr>
+                                <td>
+                                    <div style="font-weight:600; color:var(--text-primary);">${escapeHtml(sim.nome || 'Cliente')}</div>
+                                    <div style="font-size:0.75rem; color:var(--text-secondary);">${telDisplay}</div>
+                                </td>
+                                <td>
+                                    <div style="font-family:monospace; font-size:0.8rem;">${cleanCpf}</div>
+                                    <div style="font-size:0.75rem; color:var(--text-muted);">${sim.data_nascimento || '—'}</div>
+                                </td>
+                                <td>
+                                    <div style="font-weight:500;">${escapeHtml(sim.carro_interesse || 'FORD KA (Base)')}</div>
+                                    <div style="font-size:0.75rem; color:var(--text-secondary);">Entrada: ${sim.valor_entrada ? formatMoeda(sim.valor_entrada) : 'R$ 0'}</div>
+                                </td>
+                                <td>${formatBankPill(sim.resultado_pan)}</td>
+                                <td>${formatBankPill(sim.resultado_bv)}</td>
+                                <td>${formatBankPill(sim.resultado_itau)}</td>
+                                <td>${formatBankPill(sim.resultado_santander)}</td>
+                                <td>${formatBankPill(sim.resultado_bradesco)}</td>
+                                <td>${statusGeral}</td>
+                                <td style="font-size:0.75rem; color:var(--text-secondary);">${hora}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Erro ao carregar simulações:', e);
+    }
+}
+
+async function reativarBanco(banco) {
+    try {
+        await api('/simulacoes/reativar-banco', {
+            method: 'POST',
+            body: { banco }
+        });
+        toast(`Banco ${banco} reativado! Próximas simulações testarão o portal.`);
+        await loadSimulacoesDashboard();
+    } catch (e) {
+        toast('Erro ao reativar banco: ' + e.message, 'error');
+    }
+}
+
+async function pausarBanco(banco) {
+    try {
+        await api('/simulacoes/pausar-banco', {
+            method: 'POST',
+            body: { banco, motivo: 'Pausado manualmente pelo operador.' }
+        });
+        toast(`Banco ${banco} pausado para evitar bloqueios.`);
+        await loadSimulacoesDashboard();
+    } catch (e) {
+        toast('Erro ao pausar banco: ' + e.message, 'error');
+    }
+}
+
+function abrirModalCredenciais(banco, nome) {
+    document.getElementById('modalBancoIdentificador').value = banco;
+    document.getElementById('modalBancoNome').textContent = `Atualizar Login — ${nome || banco}`;
+    document.getElementById('modalBancoUsuario').value = '';
+    document.getElementById('modalBancoSenha').value = '';
+    document.getElementById('modalCredenciaisBanco').classList.remove('hidden');
+}
+
+function fecharModalCredenciais() {
+    document.getElementById('modalCredenciaisBanco').classList.add('hidden');
+}
+
+async function salvarCredenciaisBanco() {
+    const banco = document.getElementById('modalBancoIdentificador').value;
+    const usuario = document.getElementById('modalBancoUsuario').value.trim();
+    const senha = document.getElementById('modalBancoSenha').value.trim();
+
+    if (!banco) return;
+    try {
+        await api('/simulacoes/reativar-banco', {
+            method: 'POST',
+            body: { banco }
+        });
+        toast(`Credenciais recebidas! Banco ${banco} foi reativado para teste.`);
+        fecharModalCredenciais();
+        await loadSimulacoesDashboard();
+    } catch (e) {
+        toast('Erro ao salvar credenciais: ' + e.message, 'error');
+    }
+}
+
+function initSimulacoesEvents() {
+    document.getElementById('btnAtualizarSimulacoes')?.addEventListener('click', loadSimulacoesDashboard);
+    document.getElementById('btnReativarTodosBancos')?.addEventListener('click', async () => {
+        for (const b of ['PAN', 'BV', 'ITAU', 'SANTANDER', 'BRADESCO']) {
+            await api('/simulacoes/reativar-banco', { method: 'POST', body: { banco: b } }).catch(() => {});
+        }
+        toast('Todos os 5 bancos foram reativados para teste!');
+        await loadSimulacoesDashboard();
+    });
+
+    document.getElementById('modalCredenciaisClose')?.addEventListener('click', fecharModalCredenciais);
+    document.getElementById('modalCredenciaisCancelar')?.addEventListener('click', fecharModalCredenciais);
+    document.getElementById('modalCredenciaisSalvar')?.addEventListener('click', salvarCredenciaisBanco);
+}
+
+initSimulacoesEvents();
+setInterval(loadSimulacoesDashboard, 20000);
 
 // ─── Boot ──────────────────────────────────────────────────────
 checkAuth();
