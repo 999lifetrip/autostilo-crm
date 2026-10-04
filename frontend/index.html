@@ -65,6 +65,11 @@
                     <span class="nav-icon">📊</span>
                     <span class="nav-label">Dashboard</span>
                 </button>
+                <button class="nav-item" data-page="simulacoes" id="navSimulacoes">
+                    <span class="nav-icon">🏎️</span>
+                    <span class="nav-label">Simulações & Bancos</span>
+                    <span class="nav-badge" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size:0.65rem;" id="badgeSimulacoes">5 BANCOS</span>
+                </button>
                 <button class="nav-item" data-page="leads" id="navLeads">
                     <span class="nav-icon">💬</span>
                     <span class="nav-label">WhatsApp</span>
@@ -183,6 +188,27 @@
                             <div class="stat-info">
                                 <span class="stat-label">Escalados Hoje</span>
                                 <div class="stat-value" id="statEscaladosHoje">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── STATUS DOS 5 SIMULADORES BANCÁRIOS (RESUMO AO VIVO) ── -->
+                    <div class="card card-simuladores-preview" style="margin-bottom: 1.25rem; border: 1px solid rgba(16, 185, 129, 0.3); background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(18, 28, 23, 0.85) 100%);">
+                        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span style="font-size:1.4rem;">🏦</span>
+                                <div>
+                                    <h3 style="margin:0; font-size:1.05rem;">Status dos 5 Bancos Parceiros (Auto Stilo)</h3>
+                                    <span style="font-size:0.8rem; color:var(--text-secondary);">Monitoramento em tempo real dos portais de crédito (Anti-bloqueio ativo)</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="navigate('simulacoes')" style="color:var(--brand-accent); font-weight:600; border: 1px solid rgba(16, 185, 129, 0.3);">
+                                Abrir Painel de Simulações →
+                            </button>
+                        </div>
+                        <div class="card-body" style="padding: 1rem 1.25rem;">
+                            <div id="simuladoresQuickBadges" class="bancos-quick-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px;">
+                                <div class="loading-placeholder">Carregando status dos bancos...</div>
                             </div>
                         </div>
                     </div>
@@ -802,8 +828,147 @@
                     </div>
                 </div>
 
+                <!-- ── SIMULAÇÕES & BANCOS PAGE ── -->
+                <div class="page" id="pageSimulacoes">
+                    <div class="page-header" style="flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h2>🏎️ Gestão de Simulações & Bancos Parceiros</h2>
+                            <span class="page-subtitle">Controle de acesso dos 5 bancos (PAN, BV, ITAÚ, SANTANDER, BRADESCO), esteira ao vivo e proteção contra bloqueio</span>
+                        </div>
+                        <div class="page-header-actions" style="display:flex; gap:8px;">
+                            <button class="btn btn-ghost" id="btnAtualizarSimulacoes">🔄 Atualizar Status</button>
+                            <button class="btn btn-primary" id="btnReativarTodosBancos">⚡ Reativar Todos os Bancos</button>
+                        </div>
+                    </div>
+
+                    <!-- Métricas da Esteira de Simulação -->
+                    <div class="stats-row" style="margin-bottom: 1.5rem;">
+                        <div class="stat-card stat-compact stat-blue">
+                            <div class="stat-icon-wrap"><span class="stat-icon">🏎️</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Total Fichas Hoje</span>
+                                <div class="stat-value" id="simStatTotalHoje">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-compact stat-emerald">
+                            <div class="stat-icon-wrap"><span class="stat-icon">✅</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Fichas Aprovadas</span>
+                                <div class="stat-value" id="simStatAprovados">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-compact stat-red">
+                            <div class="stat-icon-wrap"><span class="stat-icon">❌</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Fichas Recusadas</span>
+                                <div class="stat-value" id="simStatRecusados">0</div>
+                            </div>
+                        </div>
+                        <div class="stat-card stat-compact stat-orange">
+                            <div class="stat-icon-wrap"><span class="stat-icon">⏳</span></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Fila Ativa</span>
+                                <div class="stat-value" id="simStatFila">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARDS DE CONTROLE INDIVIDUAL DOS 5 BANCOS -->
+                    <div class="card" style="margin-bottom: 1.5rem; border: 1px solid var(--border-accent);">
+                        <div class="card-header" style="justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:1.3rem;">🛡️</span>
+                                <div>
+                                    <h3 style="margin:0;">Status Operacional dos Portais Bancários</h3>
+                                    <span style="font-size:0.8rem; color:var(--text-secondary);">Circuit Breaker automático: pausa tentativas se a sessão cair ou o login falhar</span>
+                                </div>
+                            </div>
+                            <span class="badge-pill-brand" style="background:rgba(16,185,129,0.15); color:#34d399;">PROTEÇÃO ANTI-BLOQUEIO ATIVA</span>
+                        </div>
+                        <div class="card-body" style="padding: 1.25rem;">
+                            <div id="gridBancosControle" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+                                <div class="loading-placeholder">Carregando portais bancários...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- HISTÓRICO RECENTE DE SIMULAÇÕES -->
+                    <div class="card">
+                        <div class="card-header" style="justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:1.3rem;">📋</span>
+                                <div>
+                                    <h3 style="margin:0;">Histórico Recente de Simulações na Esteira</h3>
+                                    <span style="font-size:0.8rem; color:var(--text-secondary);">Resultados detalhados de cada lead processado nos 5 bancos</span>
+                                </div>
+                            </div>
+                            <div class="search-box" style="max-width:260px;">
+                                <span class="search-icon">🔍</span>
+                                <input type="text" id="buscaSimulacaoInput" placeholder="Buscar por CPF ou cliente...">
+                            </div>
+                        </div>
+                        <div class="table-card" style="border:none; box-shadow:none;">
+                            <table class="data-table" id="simulacoesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Cliente / Telefone</th>
+                                        <th>CPF / Nascimento</th>
+                                        <th>Carro & Entrada</th>
+                                        <th>PAN</th>
+                                        <th>BV</th>
+                                        <th>Itaú</th>
+                                        <th>Santander</th>
+                                        <th>Bradesco</th>
+                                        <th>Status Geral</th>
+                                        <th>Horário</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="simulacoesTableBody">
+                                    <tr>
+                                        <td colspan="10" class="table-loading">Carregando simulações...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </main>
+    </div>
+
+    <!-- ── MODAL: ATUALIZAR ACESSO DO BANCO ── -->
+    <div class="modal-overlay hidden" id="modalCredenciaisBanco">
+        <div class="modal modal-medium" style="max-width: 480px;">
+            <div class="modal-header">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:1.5rem;">🔑</span>
+                    <div>
+                        <h3 id="modalBancoNome" style="margin:0;">Atualizar Login do Banco</h3>
+                        <span class="modal-sub">Configurar novas credenciais ou reativar o portal</span>
+                    </div>
+                </div>
+                <button class="modal-close" id="modalCredenciaisClose">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <input type="hidden" id="modalBancoIdentificador">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display:block; font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Usuário / CPF / Operador</label>
+                    <input type="text" id="modalBancoUsuario" class="form-control" placeholder="Digite o usuário de acesso...">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                    <label style="display:block; font-size:0.85rem; color:var(--text-secondary); margin-bottom:6px;">Nova Senha do Portal</label>
+                    <input type="password" id="modalBancoSenha" class="form-control" placeholder="Digite a nova senha...">
+                </div>
+                <div style="background:rgba(245, 158, 11, 0.1); border:1px solid rgba(245, 158, 11, 0.3); border-radius:8px; padding:10px 14px; font-size:0.8rem; color:#fde68a; margin-bottom:1.5rem; line-height:1.4;">
+                    ℹ️ <strong>Importante:</strong> Ao salvar, o banco será reativado no sistema e a próxima simulação automática testará essas credenciais.
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn btn-ghost" id="modalCredenciaisCancelar">Cancelar</button>
+                    <button class="btn btn-primary" id="modalCredenciaisSalvar">💾 Salvar & Reativar Banco</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ── MODAL: LEAD DETALHE ── -->
