@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -276,6 +277,109 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
             etiquetas: etiquetas.rows,
             atividade: atividade.rows,
         });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── SIMULAÇÕES & STATUS DOS BANCOS ─────────────────────────────────────────
+const STATUS_BANCOS_PATH = path.join(__dirname, '..', '..', 'bancos_status.json');
+
+function getBancosStatus() {
+    try {
+        if (fs.existsSync(STATUS_BANCOS_PATH)) {
+            return JSON.parse(fs.readFileSync(STATUS_BANCOS_PATH, 'utf8'));
+        }
+    } catch (e) {
+        console.error('Erro ao ler bancos_status:', e.message);
+    }
+    return {
+        PAN: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' },
+        BV: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' },
+        ITAU: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' },
+        SANTANDER: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' },
+        BRADESCO: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' }
+    };
+}
+
+app.get('/api/simulacoes/dashboard', authMiddleware, async (req, res) => {
+    try {
+        const bancos = getBancosStatus();
+        const hoje = new Date().toISOString().split('T')[0];
+
+        const [statsRow, ultimasRows] = await Promise.all([
+            activePool.query(`
+                SELECT 
+                    COUNT(*) as total_geral,
+                    COUNT(*) FILTER (WHERE DATE(criado_em) = $1) as total_hoje,
+                    COUNT(*) FILTER (WHERE DATE(criado_em) = $1 AND status_geral = 'APROVADO') as aprovados_hoje,
+                    COUNT(*) FILTER (WHERE DATE(criado_em) = $1 AND status_geral = 'RECUSADO') as recusados_hoje,
+                    COUNT(*) FILTER (WHERE status = 'pendente') as pendentes,
+                    COUNT(*) FILTER (WHERE status = 'processando') as processando
+                FROM fila_simulacao_autostilo
+            `, [hoje]).catch(() => ({ rows: [{}] })),
+            activePool.query(`
+                SELECT id, telefone, nome, cpf, data_nascimento, carro_interesse, 
+                       forma_pagamento, valor_entrada, valor_parcela, status, status_geral,
+                       resultado_pan, resultado_bv, resultado_itau, resultado_santander, resultado_bradesco,
+                       detalhes_json, criado_em, processado_em
+                FROM fila_simulacao_autostilo
+                ORDER BY id DESC
+                LIMIT 40
+            `).catch(() => ({ rows: [] }))
+        ]);
+
+        res.json({
+            ok: true,
+            bancos,
+            stats: statsRow.rows[0] || {},
+            ultimas: ultimasRows.rows || []
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/simulacoes/reativar-banco', authMiddleware, async (req, res) => {
+    try {
+        const { banco } = req.body;
+        if (!banco) return res.status(400).json({ error: 'Banco obrigatório' });
+
+        const bUpper = String(banco).toUpperCase();
+        const statuses = getBancosStatus();
+
+        if (statuses[bUpper]) {
+            statuses[bUpper].needsLogin = false;
+            statuses[bUpper].status = 'OPERACIONAL';
+            statuses[bUpper].motivo = 'Reativado pelo operador no painel.';
+            statuses[bUpper].alertadoEm = null;
+            statuses[bUpper].ultimaTentativa = new Date().toISOString();
+            fs.writeFileSync(STATUS_BANCOS_PATH, JSON.stringify(statuses, null, 2), 'utf8');
+        }
+
+        res.json({ ok: true, banco: bUpper, status: statuses[bUpper] });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/simulacoes/pausar-banco', authMiddleware, async (req, res) => {
+    try {
+        const { banco, motivo } = req.body;
+        if (!banco) return res.status(400).json({ error: 'Banco obrigatório' });
+
+        const bUpper = String(banco).toUpperCase();
+        const statuses = getBancosStatus();
+
+        if (statuses[bUpper]) {
+            statuses[bUpper].needsLogin = true;
+            statuses[bUpper].status = 'AGUARDANDO ACESSO / LOGIN';
+            statuses[bUpper].motivo = motivo || 'Pausado manualmente pelo operador no painel.';
+            statuses[bUpper].ultimaTentativa = new Date().toISOString();
+            fs.writeFileSync(STATUS_BANCOS_PATH, JSON.stringify(statuses, null, 2), 'utf8');
+        }
+
+        res.json({ ok: true, banco: bUpper, status: statuses[bUpper] });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -2072,7 +2176,7 @@ async function sintetizarAudioTTS(texto, voz = 'onyx') {
             const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX', {
                 method: 'POST',
                 headers: {
-                    'xi-api-key': 'sk_d18a706cf61c6c08aceb0300b1b45012e00380cb3c82cd1d',
+                    'xi-api-key': process.env.ELEVENLABS_API_KEY || 'sk_dd30187c7211e7cd62dc104d6d116e4bec682f5cdde54db4',
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
