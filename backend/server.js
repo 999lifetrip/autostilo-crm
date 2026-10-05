@@ -21,10 +21,10 @@ let activeHost = null;
 
 const candidateHosts = [
     process.env.DB_HOST,
+    '187.127.0.79',
     '127.0.0.1',
     'localhost',
     '172.17.0.1',
-    '187.127.0.79',
     'host.docker.internal',
     'postgresql',
     'postgres',
@@ -36,10 +36,10 @@ async function tryConnectHost(host) {
         host,
         port: parseInt(process.env.DB_PORT || '5432'),
         database: process.env.DB_NAME || 'n8n',
-        user: process.env.DB_USER || 'admin',
-        password: process.env.DB_PASSWORD || 'senha123',
+        user: process.env.DB_USER || 'dC0TbfWTJ4BGVU7W',
+        password: process.env.DB_PASSWORD || 'OuRGx2n8aOXUw7xGYiyXBCpp2N9APq58',
         ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-        connectionTimeoutMillis: 4000,
+        connectionTimeoutMillis: 5000,
     });
 
     try {
@@ -140,6 +140,42 @@ async function initTables() {
                 resumo_ajuste TEXT,
                 versao_gerada INTEGER,
                 criado_em TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_avalista_config (
+                id SERIAL PRIMARY KEY,
+                loja_id INTEGER DEFAULT 1,
+                formato_envio VARCHAR(20) DEFAULT 'audio',
+                mensagem TEXT,
+                audio_url TEXT,
+                atualizado_em TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_avalista_envios (
+                id SERIAL PRIMARY KEY,
+                telefone VARCHAR(30) NOT NULL,
+                nome_cliente VARCHAR(100),
+                tipo_envio VARCHAR(30),
+                mensagem TEXT,
+                status VARCHAR(30) DEFAULT 'enviado',
+                enviado_em TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_remarketing_config (
+                id SERIAL PRIMARY KEY,
+                etapa VARCHAR(50) NOT NULL,
+                tempo_espera_horas INTEGER DEFAULT 24,
+                ativo BOOLEAN DEFAULT true,
+                mensagem_padrao TEXT,
+                criado_em TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_remarketing_historico (
+                id SERIAL PRIMARY KEY,
+                telefone VARCHAR(30) NOT NULL,
+                etapa VARCHAR(50),
+                mensagem TEXT,
+                enviado_em TIMESTAMP DEFAULT NOW()
             );
         `);
         console.log(`✅ Tabelas CRM verificadas/criadas no Postgres (conectado via ${activeHost})`);
@@ -1482,9 +1518,16 @@ app.get('/api/ia/prompt', authMiddleware, async (req, res) => {
 });
 
 // Salva e publica nova versão do prompt
-app.post('/api/ia/salvar', authMiddleware, async (req, res) => {
+app.post(['/api/ia/salvar', '/api/ia/prompt'], authMiddleware, async (req, res) => {
     try {
-        const { prompt_text, notas } = req.body;
+        let { prompt_text, prompt, notas } = req.body || {};
+        prompt_text = prompt_text || prompt;
+
+        if (prompt_text === 'RESTAURAR_PADRAO') {
+            prompt_text = DEFAULT_SYSTEM_PROMPT;
+            notas = 'Restauração de padrão de fábrica';
+        }
+
         if (!prompt_text || !prompt_text.trim()) {
             return res.status(400).json({ error: 'Prompt não pode ser vazio' });
         }
@@ -1508,7 +1551,7 @@ app.post('/api/ia/salvar', authMiddleware, async (req, res) => {
             RETURNING id, prompt_text, versao, ativo, criado_por, notas, criado_em
         `, [lojaId, prompt_text, nextVersion, userName, notas || 'Atualização via CRM']);
 
-        res.json({ ok: true, metadata: result.rows[0] });
+        res.json({ ok: true, metadata: result.rows[0], prompt: prompt_text });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1552,7 +1595,7 @@ async function callGeminiAPI(promptText, isJson = true) {
 }
 
 // Refina o prompt com IA mantendo todas as regras
-app.post('/api/ia/refinar', authMiddleware, async (req, res) => {
+app.post(['/api/ia/refinar', '/api/ia/prompt/refinar'], authMiddleware, async (req, res) => {
     try {
         const { sugestao, prompt_atual } = req.body;
         if (!sugestao || !sugestao.trim()) {
@@ -1601,7 +1644,7 @@ REGRAS CRÍTICAS E INVIOLÁVEIS:
 });
 
 // Histórico de versões
-app.get('/api/ia/historico', authMiddleware, async (req, res) => {
+app.get(['/api/ia/historico', '/api/ia/prompt/historico'], authMiddleware, async (req, res) => {
     try {
         const result = await activePool.query(`
             SELECT id, versao, ativo, criado_por, notas, criado_em, LENGTH(prompt_text) as tamanho
@@ -1610,6 +1653,10 @@ app.get('/api/ia/historico', authMiddleware, async (req, res) => {
             ORDER BY id DESC
             LIMIT 20
         `, [req.user.lojaId]);
+
+        if (req.path.includes('/prompt/historico')) {
+            return res.json({ ok: true, historico: result.rows });
+        }
         res.json(result.rows);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1617,9 +1664,10 @@ app.get('/api/ia/historico', authMiddleware, async (req, res) => {
 });
 
 // Restaurar versão específica
-app.post('/api/ia/restaurar/:id', authMiddleware, async (req, res) => {
+app.post(['/api/ia/restaurar/:id', '/api/ia/prompt/reverter', '/api/ia/reverter'], authMiddleware, async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = req.params.id || req.body?.id;
+        if (!id) return res.status(400).json({ error: 'ID da versão é obrigatório' });
         const lojaId = req.user.lojaId;
 
         const target = await activePool.query(`
@@ -1638,7 +1686,7 @@ app.post('/api/ia/restaurar/:id', authMiddleware, async (req, res) => {
 });
 
 // ─── CHAT CONVERSACIONAL DE TREINAMENTO DO IAGO ──────────────────────────────
-app.get('/api/ia/chat-treinador', authMiddleware, async (req, res) => {
+app.get(['/api/ia/chat-treinador', '/api/ia/chat-treinador/historico'], authMiddleware, async (req, res) => {
     try {
         const lojaId = req.user.lojaId;
         const result = await activePool.query(`
@@ -1649,19 +1697,32 @@ app.get('/api/ia/chat-treinador', authMiddleware, async (req, res) => {
             LIMIT 50
         `, [lojaId]);
 
-        if (result.rows.length === 0) {
-            // Mensagem inicial de boas-vindas do Iago
+        const rows = result.rows.map(r => ({
+            ...r,
+            horario: r.criado_em ? new Date(r.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+        }));
+
+        if (rows.length === 0) {
             const welcome = {
+                id: 0,
                 role: 'assistant',
                 content: `Fala chefe! 🤝 Eu sou o **Iago**, seu consultor de vendas no WhatsApp da AutoStiloCar.\n\nPode conversar comigo à vontade e me dar qualquer tipo de ordem, instrução ou tirar dúvidas sobre o atendimento que eu me adapto e me atualizo na hora! O que vamos ajustar hoje?`,
                 resumo_ajuste: null,
                 versao_gerada: null,
-                criado_em: new Date().toISOString()
+                criado_em: new Date().toISOString(),
+                horario: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
             };
+            if (req.path.includes('/historico')) {
+                return res.json({ ok: true, historico: [welcome] });
+            }
             return res.json([welcome]);
         }
 
-        res.json(result.rows);
+        if (req.path.includes('/historico')) {
+            return res.json({ ok: true, historico: rows });
+        }
+
+        res.json(rows);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
