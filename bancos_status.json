@@ -1,0 +1,42 @@
+{
+  "PAN": {
+    "ativo": true,
+    "needsLogin": true,
+    "status": "AGUARDANDO ACESSO / LOGIN",
+    "motivo": "Usuário ou senha inválido no portal go!PAN. Atualize as credenciais.",
+    "alertadoEm": "2026-10-04T18:00:00.000Z",
+    "ultimaTentativa": "2026-10-04T18:45:00.000Z"
+  },
+  "BV": {
+    "ativo": true,
+    "needsLogin": true,
+    "status": "AGUARDANDO ACESSO / LOGIN",
+    "motivo": "Porta Chrome CDP (9225) fechada ou sessão BV aguarda login manual.",
+    "alertadoEm": "2026-10-04T18:00:00.000Z",
+    "ultimaTentativa": "2026-10-04T18:45:00.000Z"
+  },
+  "ITAU": {
+    "ativo": true,
+    "needsLogin": false,
+    "status": "OPERACIONAL",
+    "motivo": "Sessão Credline Itaú ativa e operacional.",
+    "alertadoEm": null,
+    "ultimaTentativa": "2026-10-04T18:45:00.000Z"
+  },
+  "SANTANDER": {
+    "ativo": true,
+    "needsLogin": false,
+    "status": "OPERACIONAL",
+    "motivo": "Sessão Santander ativa e operacional.",
+    "alertadoEm": null,
+    "ultimaTentativa": "2026-10-04T18:45:00.000Z"
+  },
+  "BRADESCO": {
+    "ativo": true,
+    "needsLogin": true,
+    "status": "AGUARDANDO ACESSO / LOGIN",
+    "motivo": "Navegador Bradesco travou na inicialização e necessita de login manual.",
+    "alertadoEm": "2026-10-04T18:00:00.000Z",
+    "ultimaTentativa": "2026-10-04T18:45:00.000Z"
+  }
+}
