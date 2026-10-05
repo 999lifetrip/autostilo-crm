@@ -198,6 +198,7 @@ document.getElementById('btnLogout').addEventListener('click', logout);
 // ─── Navigation ────────────────────────────────────────────────
 const pages = {
     dashboard: { page: 'pageDashboard', title: 'Dashboard Geral', nav: 'navDashboard' },
+    simulacoes: { page: 'pageSimulacoes', title: '🏎️ Simulações & Bancos Parceiros', nav: 'navSimulacoes' },
     leads: { page: 'pageLeads', title: 'WhatsApp', nav: 'navLeads' },
     veiculos: { page: 'pageVeiculos', title: 'Anúncio / Estoque', nav: 'navVeiculos' },
     iaEditor: { page: 'pageIaEditor', title: 'Editor do Robô', nav: 'navIaEditor' },
@@ -3170,6 +3171,15 @@ function initSimulacoesEvents() {
         }
         toast('Todos os 5 bancos foram reativados para teste!');
         await loadSimulacoesDashboard();
+    });
+
+    document.getElementById('buscaSimulacaoInput')?.addEventListener('input', (e) => {
+        const q = (e.target.value || '').toLowerCase().trim();
+        const rows = document.querySelectorAll('#simulacoesTableBody tr');
+        rows.forEach(tr => {
+            const text = tr.textContent.toLowerCase();
+            tr.style.display = text.includes(q) ? '' : 'none';
+        });
     });
 
     document.getElementById('modalCredenciaisClose')?.addEventListener('click', fecharModalCredenciais);
