@@ -514,68 +514,29 @@ app.post('/api/leads/upsert-direct', async (req, res) => {
         const telClean = String(telefone).replace(/\D/g, '');
         if (telClean.length < 8) return res.status(400).json({ error: 'Telefone inválido' });
 
-        // 1. Verifica se lead já existe e se já tem consultor atribuído
         const check = await activePool.query(
-            'SELECT id, vendedor_id, etiqueta FROM crm_leads WHERE telefone = $1 OR telefone LIKE $2',
+            'SELECT id, etiqueta FROM crm_leads WHERE telefone = $1 OR telefone LIKE $2',
             [telClean, `%${telClean.slice(-8)}`]
         );
 
-        let vendedorId = check.rows[0]?.vendedor_id;
-        let isNovoVendedor = false;
-        let labelToAdd = null;
-
-        if (!vendedorId || (vendedorId !== 3 && vendedorId !== 4)) {
-            // Distribuição alternada (Round-Robin 50/50 entre Eduardo=3 e Tharlys=4)
-            const countRes = await activePool.query(`
-                SELECT 
-                    COALESCE(SUM(CASE WHEN vendedor_id = 3 THEN 1 ELSE 0 END), 0) as eduardo_count,
-                    COALESCE(SUM(CASE WHEN vendedor_id = 4 THEN 1 ELSE 0 END), 0) as tharlys_count
-                FROM crm_leads
-            `);
-            const eCount = parseInt(countRes.rows[0].eduardo_count) || 0;
-            const tCount = parseInt(countRes.rows[0].tharlys_count) || 0;
-
-            if (eCount <= tCount) {
-                vendedorId = 3; // Eduardo
-                labelToAdd = WHATSAPP_LABELS.EDUARDO; // '33'
-            } else {
-                vendedorId = 4; // Tharlys
-                labelToAdd = WHATSAPP_LABELS.THARLYS; // '34'
-            }
-            isNovoVendedor = true;
-        }
-
-        const consultorEtiqueta = vendedorId === 3 ? 'eduardo' : 'tharlys';
-        const consultorNome = vendedorId === 3 ? 'Eduardo' : 'Tharlys';
-        const labelConsultor = vendedorId === 3 ? WHATSAPP_LABELS.EDUARDO : WHATSAPP_LABELS.THARLYS;
-
         if (check.rows.length === 0) {
             await activePool.query(`
-                INSERT INTO crm_leads (loja_id, telefone, nome, vendedor_id, etiqueta, ultima_mensagem, ultima_interacao, ia_ativa, total_mensagens)
-                VALUES (1, $1, $2, $3, $4, $5, NOW(), true, 1)
-            `, [telClean, nome || telClean, vendedorId, consultorEtiqueta, mensagem || 'Nova mensagem']);
+                INSERT INTO crm_leads (loja_id, telefone, nome, etiqueta, ultima_mensagem, ultima_interacao, ia_ativa, total_mensagens)
+                VALUES (1, $1, $2, 'novo', $3, NOW(), true, 1)
+            `, [telClean, nome || telClean, mensagem || 'Nova mensagem']);
         } else {
             await activePool.query(`
                 UPDATE crm_leads 
-                SET vendedor_id = COALESCE(vendedor_id, $2),
-                    etiqueta = CASE WHEN etiqueta IS NULL OR etiqueta IN ('novo', '') THEN $3 ELSE etiqueta END,
-                    ultima_mensagem = COALESCE($4, ultima_mensagem),
+                SET ultima_mensagem = COALESCE($2, ultima_mensagem),
                     ultima_interacao = NOW(),
                     total_mensagens = crm_leads.total_mensagens + 1
                 WHERE id = $1
-            `, [check.rows[0].id, vendedorId, consultorEtiqueta, mensagem]);
+            `, [check.rows[0].id, mensagem]);
         }
-
-        // Garante a etiqueta do consultor SEMPRE no WhatsApp via Evolution API!
-        await gerenciarEtiquetaWhatsApp(telClean, labelConsultor, 'add');
 
         res.json({
             success: true,
-            telefone: telClean,
-            vendedor_id: vendedorId,
-            vendedor_nome: consultorNome,
-            etiqueta: consultorEtiqueta,
-            whatsapp_label_id: labelConsultor
+            telefone: telClean
         });
     } catch (err) {
         console.error('Erro /api/leads/upsert-direct:', err);
@@ -795,24 +756,7 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
         const { telefone } = req.params;
         let { ia_ativa, etiqueta, vendedor_id, anotacoes, nome } = req.body;
 
-        // Sincronização automática entre Consultor e Etiqueta
-        if (vendedor_id !== undefined && vendedor_id !== null && vendedor_id !== '') {
-            const vRes = await activePool.query('SELECT nome FROM crm_usuarios WHERE id = $1', [vendedor_id]);
-            const vNome = (vRes.rows[0]?.nome || '').toLowerCase();
-            if (vNome.includes('eduardo') && (!etiqueta || etiqueta === 'com_vendedor' || etiqueta === 'tharlys')) {
-                etiqueta = 'eduardo';
-            } else if (vNome.includes('tharlys') && (!etiqueta || etiqueta === 'com_vendedor' || etiqueta === 'eduardo')) {
-                etiqueta = 'tharlys';
-            }
-        } else if (etiqueta === 'eduardo' || etiqueta === 'tharlys') {
-            const vRes = await activePool.query(
-                `SELECT id FROM crm_usuarios WHERE LOWER(nome) LIKE $1 AND loja_id = $2 LIMIT 1`,
-                [`%${etiqueta}%`, lojaId]
-            );
-            if (vRes.rows.length) {
-                vendedor_id = vRes.rows[0].id;
-            }
-        }
+
 
         const current = await activePool.query(
             'SELECT * FROM crm_leads WHERE loja_id = $1 AND telefone = $2',
@@ -842,11 +786,20 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
             params
         );
 
+        const telLimpoRaw = decodeURIComponent(telefone).replace(/\D/g, '');
         if (ia_ativa === false || ia_ativa === 'false') {
-            await activePool.query(
-                `UPDATE n8n_status_atendimento SET escalado = true WHERE telefone = $1`,
-                [decodeURIComponent(telefone)]
-            ).catch(() => {});
+            await activePool.query(`
+                INSERT INTO n8n_escalacao_alerta (id_conversa, telefone, escalado_em)
+                VALUES ($1, $1, NOW())
+                ON CONFLICT (id_conversa) DO UPDATE SET escalado_em = NOW(), telefone = EXCLUDED.telefone
+            `, [telLimpoRaw]).catch(() => {});
+        } else if (ia_ativa === true || ia_ativa === 'true') {
+            await activePool.query(`
+                DELETE FROM n8n_escalacao_alerta WHERE telefone = $1 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($1, 8)
+            `, [telLimpoRaw]).catch(() => {});
+            await activePool.query(`
+                DELETE FROM n8n_status_atendimento WHERE session_id = $1 OR RIGHT(REGEXP_REPLACE(session_id, '\\D', '', 'g'), 8) = RIGHT($1, 8)
+            `, [telLimpoRaw]).catch(() => {});
         }
 
         const updatedLead = updated.rows[0];
@@ -863,12 +816,6 @@ app.patch('/api/leads/:telefone', authMiddleware, async (req, res) => {
                 gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.SIMULACAO, 'remove');
                 gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.PEDIR_AVALISTA, 'remove');
                 gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.APROVADA, 'add');
-            } else if (etiqueta === 'eduardo') {
-                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.THARLYS, 'remove');
-                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.EDUARDO, 'add');
-            } else if (etiqueta === 'tharlys') {
-                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.EDUARDO, 'remove');
-                gerenciarEtiquetaWhatsApp(telLimpo, WHATSAPP_LABELS.THARLYS, 'add');
             }
         }
 
@@ -895,24 +842,28 @@ app.post('/api/leads/:telefone/toggle-ia', authMiddleware, async (req, res) => {
             await activePool.query(`
                 UPDATE crm_leads 
                 SET ia_ativa = false, etiqueta = 'com_vendedor', etapa_funil = 'com_vendedor', escalado_em = NOW()
-                WHERE loja_id = $1 AND telefone = $2
+                WHERE loja_id = $1 AND (telefone = $2 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($2, 8))
             `, [lojaId, rawPhone]);
 
             await activePool.query(`
-                INSERT INTO n8n_escalacao_alerta (id_conversa, telefone)
-                VALUES ($1, $1)
-                ON CONFLICT (telefone) DO NOTHING
-            `, [rawPhone]).catch(() => {});
+                INSERT INTO n8n_escalacao_alerta (id_conversa, telefone, escalado_em)
+                VALUES ($1, $1, NOW())
+                ON CONFLICT (id_conversa) DO UPDATE SET escalado_em = NOW(), telefone = EXCLUDED.telefone
+            `, [rawPhone]).catch((err) => { console.error('Erro insert n8n_escalacao_alerta:', err); });
         } else {
             // Reativar IA -> IA Ativa
             await activePool.query(`
                 UPDATE crm_leads 
-                SET ia_ativa = true, etiqueta = CASE WHEN etiqueta = 'com_vendedor' THEN 'em_atendimento' ELSE etiqueta END
-                WHERE loja_id = $1 AND telefone = $2
+                SET ia_ativa = true, etapa_funil = 'em_atendimento', etiqueta = CASE WHEN etiqueta = 'com_vendedor' THEN 'em_atendimento' ELSE etiqueta END
+                WHERE loja_id = $1 AND (telefone = $2 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($2, 8))
             `, [lojaId, rawPhone]);
 
             await activePool.query(`
-                DELETE FROM n8n_escalacao_alerta WHERE telefone = $1
+                DELETE FROM n8n_escalacao_alerta WHERE telefone = $1 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($1, 8)
+            `, [rawPhone]).catch((err) => { console.error('Erro delete n8n_escalacao_alerta:', err); });
+
+            await activePool.query(`
+                DELETE FROM n8n_status_atendimento WHERE session_id = $1 OR RIGHT(REGEXP_REPLACE(session_id, '\\D', '', 'g'), 8) = RIGHT($1, 8)
             `, [rawPhone]).catch(() => {});
         }
 
@@ -1271,29 +1222,14 @@ app.post('/api/leads/:telefone/mensagem', authMiddleware, async (req, res) => {
         const data = await response.json();
         if (!response.ok) return res.status(400).json({ error: 'Erro ao enviar', detail: data });
 
-        // Quando o consultor responder pelo CRM, coloca a etiqueta dele automaticamente caso o lead ainda não tenha dono
+        // Quando o consultor responder pelo CRM, desativa IA e atualiza horário
         if (req.user && activePool) {
-            const userId = req.user.id;
-            const uRes = await activePool.query('SELECT nome FROM crm_usuarios WHERE id = $1', [userId]);
-            const uNome = (uRes.rows[0]?.nome || '').toLowerCase();
-            const tagVendedor = uNome.includes('eduardo') ? 'eduardo' : (uNome.includes('tharlys') ? 'tharlys' : null);
-
-            if (tagVendedor) {
-                // Apenas atribui se o lead NÃO pertencer ao outro vendedor (preserva o titular)
-                await activePool.query(`
-                    UPDATE crm_leads
-                    SET vendedor_id = COALESCE(vendedor_id, $1),
-                        etiqueta = CASE 
-                            WHEN vendedor_id IS NULL OR etiqueta IN ('novo', 'com_vendedor', 'aguardando')
-                            THEN $2
-                            ELSE etiqueta
-                        END,
-                        ia_ativa = false,
-                        ultima_interacao = NOW()
-                    WHERE (telefone = $3 OR telefone = $4)
-                      AND (vendedor_id IS NULL OR vendedor_id = $1)
-                `, [userId, tagVendedor, phone, `+${phone}`]).catch(e => console.error('Erro ao atualizar dono do lead:', e.message));
-            }
+            await activePool.query(`
+                UPDATE crm_leads
+                SET ia_ativa = false,
+                    ultima_interacao = NOW()
+                WHERE (telefone = $1 OR telefone = $2)
+            `, [phone, `+${phone}`]).catch(e => console.error('Erro ao atualizar status do lead:', e.message));
         }
 
         res.json({ ok: true, data });
@@ -2231,10 +2167,10 @@ async function sintetizarAudioTTS(texto, voz = 'onyx') {
     try {
         if (!texto || !texto.trim()) return null;
 
-        // 1. Tenta ElevenLabs com a voz oficial humanizada do Iago
+        // 1. Tenta ElevenLabs com a voz oficial humanizada do Iago (Eduardo S. - Brazilian Clear & Pro)
         try {
             console.log(`🎙️ [ElevenLabs TTS] Sintetizando voz do Iago para texto (${texto.length} caracteres)...`);
-            const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/TxGEqnHWrfWFTfGW9XjX', {
+            const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/4J31DrhygVjvFsoj7BsM', {
                 method: 'POST',
                 headers: {
                     'xi-api-key': process.env.ELEVENLABS_API_KEY || 'sk_dd30187c7211e7cd62dc104d6d116e4bec682f5cdde54db4',
@@ -2243,6 +2179,11 @@ async function sintetizarAudioTTS(texto, voz = 'onyx') {
                 body: JSON.stringify({
                     text: texto.slice(0, 1000),
                     model_id: 'eleven_multilingual_v2',
+                    voice_settings: {
+                        stability: 0.35,
+                        similarity_boost: 0.44,
+                        speed: 1.1
+                    }
                 }),
             });
 
@@ -2529,10 +2470,7 @@ async function enviarMensagemAvalista(telefone, nomeLead, formatoCustom = null) 
         VALUES ($1, $2, $3, $4, 'enviado', NOW())
     `, [telClean, nomeValido || telClean, tipoEnviadoEfetivo, textoFinal]);
 
-    // Atualizar etiquetas no WhatsApp via Evolution API:
-    // Remove "Simulação" (ID 20) e Adiciona "Pedir avalista" (ID 11)
-    await gerenciarEtiquetaWhatsApp(telClean, WHATSAPP_LABELS.SIMULACAO, 'remove');
-    await gerenciarEtiquetaWhatsApp(telClean, WHATSAPP_LABELS.PEDIR_AVALISTA, 'add');
+    // Lead escalado e direcionado para atendimento humano (sem etiquetas de WhatsApp)
 
     try {
         const textoGrupo = `🤝 *AVALISTA SOLICITADO:* Mensagem de Avalista/Novo Nome (${tipoEnviadoEfetivo}) enviada para ${nomeValido ? nomeValido + ' ' : ''}(+${telClean})! O robô pausou e o lead foi direcionado para o vendedor humano dar continuidade. 🚗`;
@@ -2615,11 +2553,37 @@ app.get('/api/avalista/leads', authMiddleware, async (req, res) => {
                 SELECT id, enviado_em, tipo_envio FROM crm_avalista_envios WHERE telefone = l.telefone ORDER BY id DESC LIMIT 1
             ) e ON true
             WHERE (l.etiqueta IN ('com_vendedor', 'reprovado_pedir_nome') OR l.escalado_em IS NOT NULL)
-              AND l.etiqueta NOT IN ('aprovado', 'a_vista', 'fechou')
+              AND l.etiqueta NOT IN ('aprovado', 'a_vista', 'fechou', 'perdeu', 'descartado', 'excluido')
             ORDER BY COALESCE(l.escalado_em, l.ultima_interacao) DESC
             LIMIT 40
         `);
         res.json({ ok: true, leads: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/avalista/leads/:telefone', authMiddleware, async (req, res) => {
+    try {
+        const { lojaId } = req.user;
+        const telClean = String(req.params.telefone || '').replace(/\D/g, '');
+        if (!telClean) return res.status(400).json({ error: 'Telefone inválido' });
+
+        await activePool.query(`
+            UPDATE crm_leads
+            SET etiqueta = 'descartado',
+                etapa_funil = 'descartado',
+                ultima_interacao = NOW()
+            WHERE loja_id = $1 AND (telefone = $2 OR telefone = '+' || $2 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($2, 8))
+        `, [lojaId, telClean]);
+
+        await activePool.query(`
+            UPDATE crm_avalista_envios
+            SET status = 'descartado'
+            WHERE telefone = $1 OR telefone = '+' || $1 OR RIGHT(REGEXP_REPLACE(telefone, '\\D', '', 'g'), 8) = RIGHT($1, 8)
+        `, [telClean]);
+
+        res.json({ ok: true, telefone: telClean });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
