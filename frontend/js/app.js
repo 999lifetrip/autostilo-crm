@@ -33,6 +33,10 @@ function api(endpoint, options = {}) {
             const err = await r.json().catch(() => ({ error: r.statusText }));
             throw new Error(err.error || 'Erro desconhecido');
         }
+        const cType = r.headers.get('content-type') || '';
+        if (!cType.includes('application/json')) {
+            throw new Error(`Endpoint ${endpoint} retornou resposta não-JSON (${r.status})`);
+        }
         return r.json();
     });
 }
@@ -2645,7 +2649,7 @@ async function loadChatTreinadorHistorico() {
 
     try {
         const res = await api('/ia/chat-treinador/historico');
-        const msgs = res.historico || [];
+        const msgs = Array.isArray(res) ? res : (res.historico || []);
         iaEditorState.chatHistorico = msgs;
 
         if (msgs.length === 0) {
@@ -2765,7 +2769,7 @@ async function loadPromptHistorico() {
 
     try {
         const res = await api('/ia/prompt/historico');
-        const list = res.historico || [];
+        const list = Array.isArray(res) ? res : (res.historico || []);
         select.innerHTML = '<option value="">⏮️ Histórico de Versões...</option>';
         list.forEach(v => {
             const opt = document.createElement('option');
