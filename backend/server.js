@@ -283,15 +283,19 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
 });
 
 // ─── SIMULAÇÕES & STATUS DOS BANCOS ─────────────────────────────────────────
-const STATUS_BANCOS_PATH = path.join(__dirname, '..', '..', 'bancos_status.json');
+const STATUS_BANCOS_PATHS = [
+    path.join(__dirname, '..', '..', 'bancos_status.json'),
+    path.join(__dirname, '..', 'bancos_status.json'),
+    path.join(__dirname, 'bancos_status.json')
+];
 
-function getBancosStatus() {
-    try {
-        if (fs.existsSync(STATUS_BANCOS_PATH)) {
-            return JSON.parse(fs.readFileSync(STATUS_BANCOS_PATH, 'utf8'));
-        }
-    } catch (e) {
-        console.error('Erro ao ler bancos_status:', e.message);
+function getBancosStatusFallback() {
+    for (const p of STATUS_BANCOS_PATHS) {
+        try {
+            if (fs.existsSync(p)) {
+                return JSON.parse(fs.readFileSync(p, 'utf8'));
+            }
+        } catch (_) {}
     }
     return {
         PAN: { ativo: true, needsLogin: false, status: 'OPERACIONAL', motivo: '' },
@@ -302,9 +306,49 @@ function getBancosStatus() {
     };
 }
 
+async function getBancosStatus() {
+    try {
+        const res = await activePool.query(
+            'SELECT banco, ativo, needs_login, status, motivo, alertado_em, ultima_tentativa FROM crm_bancos_status ORDER BY banco'
+        );
+        if (res.rows && res.rows.length > 0) {
+            const out = {};
+            res.rows.forEach(r => {
+                out[r.banco] = {
+                    ativo: r.ativo !== false,
+                    needsLogin: r.needs_login === true,
+                    status: r.status || 'OPERACIONAL',
+                    motivo: r.motivo || '',
+                    alertadoEm: r.alertado_em ? r.alertado_em.toISOString() : null,
+                    ultimaTentativa: r.ultima_tentativa ? r.ultima_tentativa.toISOString() : null
+                };
+            });
+            return out;
+        }
+    } catch (e) {
+        console.error('Erro ao consultar crm_bancos_status no Postgres:', e.message);
+    }
+    return getBancosStatusFallback();
+}
+
+function saveBancosStatusFile(banco, partialData) {
+    for (const p of STATUS_BANCOS_PATHS) {
+        try {
+            if (fs.existsSync(p)) {
+                const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+                if (data[banco]) {
+                    Object.assign(data[banco], partialData);
+                    fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
+                    break;
+                }
+            }
+        } catch (_) {}
+    }
+}
+
 app.get('/api/simulacoes/dashboard', authMiddleware, async (req, res) => {
     try {
-        const bancos = getBancosStatus();
+        const bancos = await getBancosStatus();
         const hoje = new Date().toISOString().split('T')[0];
 
         const [statsRow, ultimasRows] = await Promise.all([
@@ -346,18 +390,26 @@ app.post('/api/simulacoes/reativar-banco', authMiddleware, async (req, res) => {
         if (!banco) return res.status(400).json({ error: 'Banco obrigatório' });
 
         const bUpper = String(banco).toUpperCase();
-        const statuses = getBancosStatus();
+        await activePool.query(`
+            UPDATE crm_bancos_status
+            SET needs_login = false,
+                status = 'OPERACIONAL',
+                motivo = 'Reativado pelo operador no painel.',
+                alertado_em = NULL,
+                ultima_tentativa = NOW(),
+                atualizado_em = NOW()
+            WHERE banco = $1
+        `, [bUpper]).catch(() => {});
 
-        if (statuses[bUpper]) {
-            statuses[bUpper].needsLogin = false;
-            statuses[bUpper].status = 'OPERACIONAL';
-            statuses[bUpper].motivo = 'Reativado pelo operador no painel.';
-            statuses[bUpper].alertadoEm = null;
-            statuses[bUpper].ultimaTentativa = new Date().toISOString();
-            fs.writeFileSync(STATUS_BANCOS_PATH, JSON.stringify(statuses, null, 2), 'utf8');
-        }
+        saveBancosStatusFile(bUpper, {
+            needsLogin: false,
+            status: 'OPERACIONAL',
+            motivo: 'Reativado pelo operador no painel.',
+            alertadoEm: null,
+            ultimaTentativa: new Date().toISOString()
+        });
 
-        res.json({ ok: true, banco: bUpper, status: statuses[bUpper] });
+        res.json({ ok: true, banco: bUpper, status: { needsLogin: false, status: 'OPERACIONAL' } });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -369,17 +421,26 @@ app.post('/api/simulacoes/pausar-banco', authMiddleware, async (req, res) => {
         if (!banco) return res.status(400).json({ error: 'Banco obrigatório' });
 
         const bUpper = String(banco).toUpperCase();
-        const statuses = getBancosStatus();
+        const mot = motivo || 'Pausado manualmente pelo operador no painel.';
 
-        if (statuses[bUpper]) {
-            statuses[bUpper].needsLogin = true;
-            statuses[bUpper].status = 'AGUARDANDO ACESSO / LOGIN';
-            statuses[bUpper].motivo = motivo || 'Pausado manualmente pelo operador no painel.';
-            statuses[bUpper].ultimaTentativa = new Date().toISOString();
-            fs.writeFileSync(STATUS_BANCOS_PATH, JSON.stringify(statuses, null, 2), 'utf8');
-        }
+        await activePool.query(`
+            UPDATE crm_bancos_status
+            SET needs_login = true,
+                status = 'AGUARDANDO ACESSO / LOGIN',
+                motivo = $2,
+                ultima_tentativa = NOW(),
+                atualizado_em = NOW()
+            WHERE banco = $1
+        `, [bUpper, mot]).catch(() => {});
 
-        res.json({ ok: true, banco: bUpper, status: statuses[bUpper] });
+        saveBancosStatusFile(bUpper, {
+            needsLogin: true,
+            status: 'AGUARDANDO ACESSO / LOGIN',
+            motivo: mot,
+            ultimaTentativa: new Date().toISOString()
+        });
+
+        res.json({ ok: true, banco: bUpper, status: { needsLogin: true, status: 'AGUARDANDO ACESSO / LOGIN' } });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
