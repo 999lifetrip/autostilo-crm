@@ -370,7 +370,7 @@ async function loadLiveActivity() {
 // ─── Leads ─────────────────────────────────────────────────────
 async function loadLeads() {
     const tbody = document.getElementById('leadsTableBody');
-    tbody.innerHTML = `<tr><td colspan="7" class="table-loading"><div class="spinner"></div> Carregando...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="table-loading"><div class="spinner"></div> Carregando...</td></tr>`;
     try {
         const params = new URLSearchParams({
             pagina: leadsState.pagina,
@@ -392,19 +392,12 @@ function renderLeadsTable(leads) {
     const tbody = document.getElementById('leadsTableBody');
     if (!tbody) return;
     if (!leads || !leads.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="table-loading">Nenhum lead encontrado</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="table-loading">Nenhum lead encontrado</td></tr>`;
         return;
     }
     tbody.innerHTML = leads.map(l => {
         const rawMsg = l.ultima_mensagem || '—';
         const cleanMsg = rawMsg.replace(/\[\{.*?\}\]/g, '').trim();
-
-        const cNome = String(l.vendedor_nome || (l.etiqueta === 'eduardo' ? 'Eduardo' : (l.etiqueta === 'tharlys' ? 'Tharlys' : ''))).trim();
-        const consultorBadge = cNome.toLowerCase().includes('eduardo')
-            ? `<span class="badge" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);font-weight:600;padding:4px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Eduardo</span>`
-            : cNome.toLowerCase().includes('tharlys')
-            ? `<span class="badge" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);font-weight:600;padding:4px 8px;display:inline-flex;align-items:center;gap:4px;">👨‍💼 Tharlys</span>`
-            : `<span style="color:var(--text-muted);font-size:0.8rem;padding:2px 6px;">—</span>`;
 
         return `
             <tr onclick="openLead('${encodeURIComponent(l.telefone)}')">
@@ -416,9 +409,6 @@ function renderLeadsTable(leads) {
                             <div class="lead-phone">${formatTel(l.telefone)}</div>
                         </div>
                     </div>
-                </td>
-                <td>
-                    ${consultorBadge}
                 </td>
                 <td>
                     <button class="ia-toggle-btn ${l.ia_ativa ? 'ia-on' : 'ia-off'}" 
@@ -2274,6 +2264,9 @@ async function loadAvalista() {
                             <button class="btn btn-sm" onclick="marcarAVistaDireto('${tel}')" style="background:rgba(234,179,8,0.2); color:#facc15; border:1px solid rgba(234,179,8,0.4); font-weight:600; cursor:pointer;" title="Marcar como Compra À Vista">
                                 💵 À Vista
                             </button>
+                            <button class="btn btn-sm" onclick="excluirLeadAvalista('${tel}')" style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid rgba(239,68,68,0.4); font-weight:700; cursor:pointer; padding:4px 9px; border-radius:6px;" title="Dispensar / Excluir da Fila de Avalista">
+                                ✕
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -2374,6 +2367,17 @@ window.marcarAVistaDireto = async (tel) => {
         if (badgeAprov) badgeAprov.textContent = parseInt(badgeAprov.textContent || '0') + 1;
     } catch(e) {
         toast('Erro ao marcar à vista: ' + e.message, 'error');
+    }
+};
+
+window.excluirLeadAvalista = async (tel) => {
+    if (!confirm('Deseja realmente remover este lead da fila de avalista?')) return;
+    try {
+        await api(`/avalista/leads/${encodeURIComponent(tel)}`, { method: 'DELETE' });
+        toast('Lead removido da fila de avalista!');
+        await loadAvalista();
+    } catch (e) {
+        toast('Erro ao excluir lead: ' + e.message, 'error');
     }
 };
 
