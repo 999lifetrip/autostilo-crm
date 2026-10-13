@@ -1551,11 +1551,68 @@ app.post(['/api/ia/salvar', '/api/ia/prompt'], authMiddleware, async (req, res) 
             RETURNING id, prompt_text, versao, ativo, criado_por, notas, criado_em
         `, [lojaId, prompt_text, nextVersion, userName, notas || 'Atualização via CRM']);
 
+        // Sincroniza imediatamente em segundo plano com o nó de IA do n8n para ativar no WhatsApp
+        syncPromptToN8N(prompt_text).catch(e => console.error('[CRM -> n8n Sync Error]:', e.message));
+
         res.json({ ok: true, metadata: result.rows[0], prompt: prompt_text });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
+
+// Helper para sincronizar prompt com o fluxo n8n (Secretária v3)
+async function syncPromptToN8N(newPromptText) {
+    try {
+        const n8nUrl = process.env.N8N_URL || 'https://n8n.omelhorvendedoronline.com.br';
+        const apiKey = process.env.N8N_API_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNjMwYTNjNS1mMTQ5LTRkNTYtODY0ZC1iZjlhNjdkNDI0MjEiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiZDEwZWEzMzQtMGJkYy00ZDZiLThlMzctZDY5MmU1MDM2N2NkIiwiaWF0IjoxNzg5Njk1NjUzfQ.3W9QWnz6Gpn84jxH-m3OKUAorgBiUrORLKr15mtYxug';
+        const wfId = process.env.N8N_AVA_WORKFLOW_ID || 'X4TrSDn3xPB7sLMz';
+
+        const res = await fetch(`${n8nUrl}/api/v1/workflows/${wfId}`, {
+            headers: { 'X-N8N-API-KEY': apiKey }
+        });
+        if (!res.ok) {
+            console.error('[syncPromptToN8N] Falha ao buscar workflow:', res.status);
+            return false;
+        }
+        const wf = await res.json();
+        const agentNode = wf.nodes.find(n => n.name === 'Secretária v3');
+        if (!agentNode) {
+            console.error('[syncPromptToN8N] Nó Secretária v3 não encontrado');
+            return false;
+        }
+        agentNode.parameters.options.systemMessage = '=' + newPromptText.replace(/^=/, '');
+
+        const cleanSettings = {
+            executionOrder: wf.settings?.executionOrder || 'v1',
+            errorWorkflow: wf.settings?.errorWorkflow || undefined
+        };
+
+        const updateRes = await fetch(`${n8nUrl}/api/v1/workflows/${wfId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-N8N-API-KEY': apiKey
+            },
+            body: JSON.stringify({
+                name: wf.name,
+                nodes: wf.nodes,
+                connections: wf.connections,
+                settings: cleanSettings
+            })
+        });
+
+        if (updateRes.ok) {
+            console.log('[syncPromptToN8N] Prompt sincronizado com sucesso no n8n!');
+            return true;
+        } else {
+            console.error('[syncPromptToN8N] Falha ao atualizar workflow no n8n:', updateRes.status);
+            return false;
+        }
+    } catch (err) {
+        console.error('[syncPromptToN8N] Erro ao sincronizar prompt com n8n:', err.message);
+        return false;
+    }
+}
 
 // Helper para chamadas Gemini com fallback automático de modelos
 async function callGeminiAPI(promptText, isJson = true) {
@@ -1812,6 +1869,9 @@ Retorne SEMPRE em formato JSON estrito:
                 INSERT INTO crm_ia_prompts (loja_id, prompt_text, versao, ativo, criado_por, notas)
                 VALUES ($1, $2, $3, true, $4, $5)
             `, [lojaId, parsed.prompt_refinado, novaVersao, userName, parsed.resumo_ajuste || 'Ordem via Chat Treinador']);
+
+            // Sincroniza imediatamente com o n8n para atualizar no WhatsApp
+            syncPromptToN8N(parsed.prompt_refinado).catch(e => console.error('[Chat Treinador -> n8n Sync Error]:', e.message));
         }
 
         // Salva resposta do assistente no chat
@@ -1824,9 +1884,13 @@ Retorne SEMPRE em formato JSON estrito:
         res.json({
             ok: true,
             mensagem: botMsg.rows[0],
+            resposta: parsed.resposta_chat || botMsg.rows[0].content,
+            resposta_chat: parsed.resposta_chat || botMsg.rows[0].content,
             alterou_prompt: !!parsed.alterou_prompt,
             nova_versao: novaVersao,
-            prompt_atual: parsed.prompt_refinado || currentPrompt
+            prompt_atual: parsed.prompt_refinado || currentPrompt,
+            prompt_refinado: parsed.prompt_refinado || currentPrompt,
+            resumo_ajuste: parsed.resumo_ajuste || null
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2228,10 +2292,10 @@ async function sintetizarAudioTTS(texto, voz = 'onyx') {
     try {
         if (!texto || !texto.trim()) return null;
 
-        // 1. Tenta ElevenLabs com a voz oficial humanizada do Iago (Eduardo S. - Brazilian Clear & Pro)
+        // 1. Tenta ElevenLabs com a voz oficial humanizada do Iago (GU conversacional)
         try {
             console.log(`🎙️ [ElevenLabs TTS] Sintetizando voz do Iago para texto (${texto.length} caracteres)...`);
-            const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/4J31DrhygVjvFsoj7BsM', {
+            const elevenRes = await fetch('https://api.elevenlabs.io/v1/text-to-speech/NMtw7BmkS8qOlL0uME7Q', {
                 method: 'POST',
                 headers: {
                     'xi-api-key': process.env.ELEVENLABS_API_KEY || 'sk_dd30187c7211e7cd62dc104d6d116e4bec682f5cdde54db4',
